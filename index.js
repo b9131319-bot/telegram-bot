@@ -57,7 +57,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 lastWheel: 0,
                 lastOrder: null,
                 gameMode: null,
-                targetNum: null
+                targetNum: null,
+                isSubscribed: false // شرط المتابعة مغلق بالبداية
             };
         }
 
@@ -80,11 +81,39 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
 
         if (text === '/start') {
-            const welcomeText = `أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🚀\n\n` +
-                `⚠️ **ملاحظة:** يجب عليك متابعة قناة التيك توك أولاً:\n🔗 https://www.tiktok.com/@e..e233\n\n` +
-                `منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍`;
+            users[chatId].isSubscribed = false; // إعادة تعيين لكي يتم إلزامه بالمتابعة
 
-            const keyboard = {
+            const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
+                `⚠️ **عذراً يا غالي، لا يمكنك استخدام البوت أو ظهور القائمة حتى تقوم بمتابعة حساب التيك توك الخاص بنا:**\n` +
+                `🔗 https://www.tiktok.com/@e..e233\n\n` +
+                `🌸 بعد إتمام المتابعة، اضغط على زر **"تحقق من المتابعة ✅"** بالأسفل لفتح البوت واستلام هدديتك ومميزات المتجر! ✨`;
+
+            const subKeyboard = {
+                inline_keyboard: [
+                    [{ text: '🔗 رابط حساب التيك توك', url: 'https://www.tiktok.com/@e..e233' }],
+                    [{ text: '✅ تحقق من المتابعة لفتح البوت', callback_data: 'check_subscription' }]
+                ]
+            };
+            await sendMessage(chatId, subText, subKeyboard);
+        }
+    } 
+    else if (update.callback_query) {
+        const chatId = update.callback_query.message.chat.id;
+        const messageId = update.callback_query.message.message_id;
+        const data = update.callback_query.data;
+
+        if (!users[chatId]) {
+            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastOrder: null, gameMode: null, targetNum: null, isSubscribed: false };
+        }
+
+        // زر التحقق الإلزامي من المتابعة
+        if (data === 'check_subscription') {
+            users[chatId].isSubscribed = true; // تم التحقق وفتح البوت
+
+            const welcomeText = `🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨\n\n` +
+                `🎁 تم التحقق بنجاح وفتح جميع خدمات البوت والألعاب لك! اختر ما يناسبك من القائمة أدناه:`;
+
+            const mainKeyboard = {
                 inline_keyboard: [
                     [
                         { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
@@ -100,20 +129,18 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     ]
                 ]
             };
-            await sendMessage(chatId, welcomeText, keyboard);
+            await editMessageText(chatId, messageId, welcomeText, mainKeyboard);
+            return res.sendStatus(200);
         }
-    } 
-    else if (update.callback_query) {
-        const chatId = update.callback_query.message.chat.id;
-        const messageId = update.callback_query.message.message_id;
-        const data = update.callback_query.data;
 
-        if (!users[chatId]) {
-            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastOrder: null, gameMode: null, targetNum: null };
+        // حماية أمان: إذا لم يكن مشتركاً وحاول يضغط أي زر آخر، نمنعه ونرجعه للتيك توك
+        if (!users[chatId].isSubscribed) {
+            await sendMessage(chatId, `⚠️ عذراً يا غالي! يجب عليك أولاً متابعة حساب التيك توك والضغط على زر التحقق لكي يعمل معك البوت.\n🔗 https://www.tiktok.com/@e..e233`);
+            return res.sendStatus(200);
         }
 
         if (data === 'main_menu') {
-            const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\nمنور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍`;
+            const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
             const menuKeyboard = {
                 inline_keyboard: [
                     [
