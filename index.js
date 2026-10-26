@@ -36,22 +36,38 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
         if (!users[chatId]) {
             users[chatId] = {
-                points: 0,
+                points: 10, // هدية ترحيبية 10 نقاط
                 ordersCount: 0,
                 lastDaily: 0,
-                lastOrder: null
+                lastOrder: null,
+                lastTiktokTask: 0
             };
         }
 
         if (text === '/start') {
-            const welcomeText = ` أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🚀\n\n` +
-                `⚠️ **عذراً، يجب عليك أولاً متابعة حساب التيك توك التالي لكي يعمل معك البوت بنجاح:**\n` +
-                `🔗 https://www.tiktok.com/@e..e233?_r=1&_t=ZS-9AsxCVPXzrY\n\n` +
-                `بعد متابعة الحساب، اضغط على زر القائمة أدناه للبدء واستخدام خدمات البوت واستلام نقاطك! ❤️`;
+            const welcomeText = `أهلاً بك يا *${userName}* في بوت الخدمات والمتكامل 🚀\n\n` +
+                `🎁 حصلت على 10 نقاط كهدية ترحيبية!\n\n` +
+                `منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍`;
 
+            // أزرار مربعات (جنب بعض) مثل الصورة الثانية
             const keyboard = {
                 inline_keyboard: [
-                    [{ text: '📋 القائمة الرئيسية للخدمات والأقسام', callback_data: 'main_menu' }]
+                    [
+                        { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
+                        { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
+                    ],
+                    [
+                        { text: '📌 مهام تيك توك (20)', callback_data: 'tiktok_tasks' },
+                        { text: '🎮 تجميع نقاط والألعاب', callback_data: 'games_menu' }
+                    ],
+                    [
+                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' },
+                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' }
+                    ],
+                    [
+                        { text: '🔗 رابط الدعوة', callback_data: 'invite_friends' },
+                        { text: '🛠️ الدعم الفني', callback_data: 'support' }
+                    ]
                 ]
             };
             await sendMessage(chatId, welcomeText, keyboard);
@@ -62,22 +78,37 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const data = update.callback_query.data;
 
         if (!users[chatId]) {
-            users[chatId] = { points: 0, ordersCount: 0, lastDaily: 0, lastOrder: null };
+            users[chatId] = { points: 10, ordersCount: 0, lastDaily: 0, lastOrder: null, lastTiktokTask: 0 };
         }
 
-        if (data === 'main_menu') {
-            const menuText = `🎛️ **القائمة الرئيسية - اختر ما يناسبك:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙`;
+        // دالة لإعادة إرسال القائمة الرئيسية مرتبة
+        const sendMainMenu = async (customMsg = '') => {
+            const menuText = `${customMsg}\n\n🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\nمنور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍`;
             const menuKeyboard = {
                 inline_keyboard: [
-                    [{ text: '🎁 الهدية اليومية (15 نقطة)', callback_data: 'daily_gift' }],
-                    [{ text: '🎮 ألعاب وتحديات (اكس أو / توقعات)', callback_data: 'games_menu' }],
-                    [{ text: '🎡 عجلة الحظ (10 إلى 100 نقطة)', callback_data: 'lucky_wheel' }],
-                    [{ text: '👤 حسابي ونقاطي وطلباتي', callback_data: 'my_account' }],
-                    [{ text: '📦 خدمات دعم (تيك توك، يوتيوب، انستقرام)', callback_data: 'services_menu' }],
-                    [{ text: '🔗 دعوة أصدقاء (50 نقطة)', callback_data: 'invite_friends' }, { text: '🛠️ الدعم الفني', callback_data: 'support' }]
+                    [
+                        { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
+                        { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
+                    ],
+                    [
+                        { text: '📌 مهام تيك توك (20)', callback_data: 'tiktok_tasks' },
+                        { text: '🎮 تجميع نقاط والألعاب', callback_data: 'games_menu' }
+                    ],
+                    [
+                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' },
+                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' }
+                    ],
+                    [
+                        { text: '🔗 رابط الدعوة', callback_data: 'invite_friends' },
+                        { text: '🛠️ الدعم الفني', callback_data: 'support' }
+                    ]
                 ]
             };
             await sendMessage(chatId, menuText, menuKeyboard);
+        };
+
+        if (data === 'main_menu') {
+            await sendMainMenu();
         }
         else if (data === 'daily_gift') {
             const now = Date.now();
@@ -88,6 +119,17 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 users[chatId].lastDaily = now;
                 users[chatId].points += 15;
                 await sendMessage(chatId, `🎉 مبروك يا غالي! حصلت على هدديتك اليومية *15 نقطة* 🪙.\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
+            }
+        }
+        else if (data === 'tiktok_tasks') {
+            const now = Date.now();
+            const cooldown = 60 * 60 * 1000; // ساعة واحدة
+            if (now - users[chatId].lastTiktokTask < cooldown) {
+                await sendMessage(chatId, `⏳ لقد أنجزت مهمة تيك توك مؤخراً، انتظر قليلاً لتظهر مهام جديدة!`);
+            } else {
+                users[chatId].lastTiktokTask = now;
+                users[chatId].points += 20;
+                await sendMessage(chatId, `📌 **مهمة تيك توك:**\nقم بمتابعة الحساب وزيارة الرابط التالي:\n🔗 https://www.tiktok.com/@e..e233\n\n✅ تم التحقق وإضافة *20 نقطة* لرصيدك 🪙!\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
             }
         }
         else if (data === 'games_menu') {
@@ -107,27 +149,17 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             if (result === 'win') {
                 users[chatId].points += 20;
-                await sendMessage(chatId, `🏆 يا بطل! لعبت بذكاء وفزت على الذكاء الاصطناعي الصعب!\n+20 نقطة 🪙 (رصيدك: ${users[chatId].points})`);
+                await sendMessage(chatId, `🏆 يا بطل! فزت على الذكاء الاصطناعي الصعب!\n+20 نقطة 🪙 (رصيدك: ${users[chatId].points})`);
             } else if (result === 'draw') {
                 users[chatId].points += 10;
                 await sendMessage(chatId, `🤝 تعادل مثير مع الذكاء الاصطناعي!\n+10 نقاط 🪙 (رصيدك: ${users[chatId].points})`);
             } else {
-                await sendMessage(chatId, `❌ هاردلك يا غالي، الذكاء الاصطناعي كان قوياً وهزمك!\n0 نقاط. حاول مرة أخرى!`);
+                await sendMessage(chatId, `❌ هاردلك يا غالي، هزمك الذكاء الاصطناعي!\n0 نقاط. حاول مرة أخرى!`);
             }
         }
         else if (data === 'play_guess') {
             users[chatId].points += 5;
-            await sendMessage(chatId, `🔮 اخترت توقعاً صحيحاً وسريعاً من نظرتك!\n+5 نقاط أضيفت لرصيدك 🪙 (رصيدك: ${users[chatId].points})`);
-        }
-        else if (data === 'lucky_wheel') {
-            const rand = Math.random();
-            let prize = 10;
-            if (rand < 0.02) prize = 100;
-            else if (rand < 0.20) prize = 50;
-            else if (rand < 0.50) prize = 25;
-
-            users[chatId].points += prize;
-            await sendMessage(chatId, `🎡 دَارَت عجلة الحظ واستقرت على:\n✨ *${prize} نقطة* 🪙!\nرصيدك الإجمالي الآن: ${users[chatId].points} نقطة.`);
+            await sendMessage(chatId, `🔮 توقعك كان صحيحاً!\n+5 نقاط أضيفت لرصيدك 🪙 (رصيدك: ${users[chatId].points})`);
         }
         else if (data === 'my_account') {
             const accText = `👤 **معلومات حسابك:**\n\n` +
@@ -137,7 +169,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             
             const accKeyboard = {
                 inline_keyboard: [
-                    [{ text: '🔍 تتبع آخر طلب لي', callback_data: 'track_order' }],
                     [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
                 ]
             };
@@ -145,13 +176,13 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
         else if (data === 'track_order') {
             if (!users[chatId].lastOrder) {
-                await sendMessage(chatId, `⚠️ ليس لديك أي طلبات سابقة لتتبعها قم بطلب خدمة أولاً!`);
+                await sendMessage(chatId, `⚠️ ليس لديك أي طلبات سابقة لتتبعها قم بطلب خدمة أولاً من المتجر!`);
             } else {
-                await sendMessage(chatId, `📌 *تتبع الطلب الأخير:*\nرقم طلبك هو: \`${users[chatId].lastOrder}\`\nحالة الطلب: جاري التنفيذ بنجاح 🚀\n❤️`);
+                await sendMessage(chatId, `📌 **تتبع الطلب الأخير:**\nرقم طلبك: \`${users[chatId].lastOrder}\`\nحالة الطلب: جاري التنفيذ بنجاح 🚀\n🤍`);
             }
         }
         else if (data === 'services_menu') {
-            const servText = `📦 **قسم خدمات الدعم وزيادة المتابعين:**\nاختر الخدمة التي تريد طلبها:`;
+            const servText = `📦 **قسم المتجر وخدمات الدعم وزيادة المتابعين:**\nاختر الخدمة التي تريد طلبها:`;
             const servKeyboard = {
                 inline_keyboard: [
                     [{ text: '🎵 زيادة متابعين ومشاهدات تيك توك', callback_data: 'order_tiktok' }],
@@ -168,18 +199,18 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             users[chatId].lastOrder = orderId;
 
             const replyMsg = `✅ **تم قبول طلبك يا غالي بكل سرور!**\n\n` +
-                `📌 هذا هو رقم طلبك إذا كنت تبي تتبعه لاحقاً: \`${orderId}\`\n` +
-                `سيتم البدء في تنفيذ طلبك في أقرب وقت ممكن.\n❤️`;
+                `📌 رقم طلبك للتتبع: \`${orderId}\`\n` +
+                `سيتم البدء في تنفيذ طلبك في أقرب وقت.\n🤍`;
             await sendMessage(chatId, replyMsg);
         }
         else if (data === 'invite_friends') {
             const botUsername = 'RATX000_bot';
             const inviteLink = `https://t.me/${botUsername}?start=ref_${chatId}`;
             users[chatId].points += 50;
-            await sendMessage(chatId, `🔗 **رابط الدعوة الخاص بك:**\n\`${inviteLink}\`\n\nشارك الرابط مع أصدقائك، وكل شخص يدخل من خلاله تكسب عليه *50 نقطة* 🪙!\n(تمت إضافة 50 نقطة كمكافأة تجريبية، رصيدك: ${users[chatId].points})`);
+            await sendMessage(chatId, `🔗 **رابط الدعوة الخاص بك:**\n\`${inviteLink}\`\n\nشارك الرابط مع أصدقائك وكل شخص يدخل تكسب عليه *50 نقطة* 🪙!`);
         }
         else if (data === 'support') {
-            await sendMessage(chatId, `🛠️ **الدعم الفني والخدمة:**\nللتواصل المباشر مع فريق الدعم الفني، يرجى مراسلة الحساب التالي:\n👤 @abod097644`);
+            await sendMessage(chatId, `🛠️ **الدعم الفني:**\nللتواصل المباشر مع فريق الدعم:\n👤 @abod097644`);
         }
     }
 
