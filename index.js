@@ -5,7 +5,7 @@ const axios = require('axios');
 const app = express();
 app.use(bodyParser.json());
 
-const TOKEN = '8875290524:AAG0U7qxmq__3gh6mqFYmFLDs3yAPF9xJg';
+const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 
 const users = {};
