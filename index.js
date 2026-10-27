@@ -11,7 +11,7 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 
 const users = {};
 
-async function sendMessage(chatId, text, replyMarkup = null) {
+async function sendMessage(chatId, text, replyMarkup = null, replyToMessageId = null) {
     try {
         const payload = {
             chat_id: chatId,
@@ -20,6 +20,9 @@ async function sendMessage(chatId, text, replyMarkup = null) {
         };
         if (replyMarkup) {
             payload.reply_markup = replyMarkup;
+        }
+        if (replyToMessageId) {
+            payload.reply_to_message_id = replyToMessageId;
         }
         const response = await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
         return response.data.result.message_id;
@@ -43,130 +46,176 @@ async function editMessageText(chatId, messageId, text, replyMarkup = null) {
     } catch (error) {}
 }
 
+// دالة لتحويل كود الطلب إلى اسم عربي واضح
+function getServiceNiceName(data) {
+    const names = {
+        'free_tk_live': 'خدمة مجانية: تكبيس لايف تيك توك (10 شيرات)',
+        'free_tk_like': 'خدمة مجانية: لايكات مقطع تيك توك',
+        'pay_tk_f1': 'متابعين تيك توك (10 إلى 50 متابع)',
+        'pay_tk_f2': 'متابعين تيك توك (50 إلى 100 متابع)',
+        'pay_tk_f3': 'متابعين تيك توك (100 إلى 200 متابع)',
+        'pay_tk_v1': 'مشاهدات وتفاعلات تيك توك (100 إلى 1000 مشاهدة)',
+        'pay_tk_v2': 'مشاهدات وتفاعلات تيك توك (1000 إلى 10000 مشاهدة)',
+        'free_yt_live': 'خدمة مجانية: تفاعلات لايف يوتيوب',
+        'free_yt_like': 'خدمة مجانية: لايكات فيديو يوتيوب',
+        'pay_yt_f1': 'مشتركين يوتيوب (10 إلى 50 مشترك)',
+        'pay_yt_f2': 'مشتركين يوتيوب (50 إلى 100 مشترك)',
+        'pay_yt_f3': 'مشتركين يوتيوب (100 إلى 200 مشترك)',
+        'pay_yt_v1': 'مشاهدات يوتيوب (100 إلى 1000 مشاهدة)',
+        'pay_yt_v2': 'مشاهدات يوتيوب (1000 إلى 10000 مشاهدة)',
+        'free_in_live': 'خدمة مجانية: تفاعلات لايف انستقرام',
+        'free_in_like': 'خدمة مجانية: لايكات ريلز/منشور انستا',
+        'pay_in_f1': 'متابعين انستقرام (10 إلى 50 متابع)',
+        'pay_in_f2': 'متابعين انستقرام (50 إلى 100 متابع)',
+        'pay_in_f3': 'متابعين انستقرام (100 إلى 200 متابع)',
+        'pay_in_v1': 'مشاهدات انستقرام (100 إلى 1000 مشاهدة)',
+        'pay_in_v2': 'مشاهدات انستقرام (1000 إلى 10000 مشاهدة)'
+    };
+    return names[data] || data;
+}
+
 app.post(`/webhook/${TOKEN}`, async (req, res) => {
     const update = req.body;
 
-    if (update.message && update.message.text) {
+    if (update.message) {
         const chatId = update.message.chat.id;
         const text = update.message.text;
         const userName = update.message.from.first_name || 'مستخدم';
 
-        if (!users[chatId]) {
-            users[chatId] = {
-                points: 20,
-                ordersCount: 0,
-                lastDaily: 0,
-                lastWheel: 0,
-                lastMemory: 0,
-                lastBoxes: 0,
-                lastShapes: 0,
-                lastOrder: null,
-                isRegistered: false,
-                waitingForInput: null // لحفظ الخدمة التي ينتظر العميل إدخال رابطه لها
-            };
-        }
+        // --- نظام الرد من الأدمن على رسائل الإشعارات (للعملاء) ---
+        if (chatId.toString() === ADMIN_CHAT_ID.toString() && update.message.reply_to_message) {
+            const repliedMessage = update.message.reply_to_message;
+            const repliedText = repliedMessage.text || '';
 
-        // إذا كان البوت ينتظر من المستخدم إدخال رابط المقطع أو اسم المستخدم للخدمة المطلوبة
-        if (users[chatId].waitingForInput) {
-            const pendingService = users[chatId].waitingForInput;
-            
-            // التحقق البسيط من صحة الرابط أو اسم المستخدم
-            if (text.length < 3 || (!text.includes('http') && !text.includes('@') && !text.includes('www.'))) {
-                await sendMessage(chatId, `❌ **الرابط أو اسم المستخدم غير صحيح!**\nيرجى إرسال رابط صحيح (يبدأ بـ http أو www) أو اسم مستخدم صحيح يحتوي على (@):`);
-                return res.sendStatus(200);
+            // استخراج معرف العميل (ID) من النص الخاص بالرسالة الأصلية للأدمن
+            const idMatch = repliedText.match(/معرف العميل \(ID\):\s*`(\d+)`/);
+            const orderIdMatch = repliedText.match(/رقم الطلب:\s*`([A-Z0-9-]+)`/);
+
+            if (idMatch && idMatch[1]) {
+                const targetUserChatId = idMatch[1];
+                const orderIdStr = orderIdMatch ? orderIdMatch[1] : 'غير معروف';
+
+                // إرسال رد الأدمن للعميل مع تنبيه برقم الطلب
+                await sendMessage(targetUserChatId, `💬 **رد من إدارة المتجر بخصوص طلبك (${orderIdStr}):**\n\n${text}`);
+                await sendMessage(ADMIN_CHAT_ID, `✅ تم إرسال الرد إلى العميل بنجاح.`);
             }
-
-            const targetInput = text;
-            users[chatId].waitingForInput = null; // إعادة تعيين الحالة
-
-            // معالجة التكلفة وخصم النقاط إن وجدت
-            let cost = 0;
-            const data = pendingService;
-
-            if (data.startsWith('pay_')) {
-                cost = 90;
-                if (data.includes('_f2')) cost = 180;
-                if (data.includes('_f3')) cost = 320;
-                if (data.includes('_v2')) cost = 300;
-                if (data.includes('_f1')) cost = 90;
-                if (data.includes('yt_f1')) cost = 110;
-                if (data.includes('yt_f2')) cost = 220;
-                if (data.includes('yt_f3')) cost = 400;
-                if (data.includes('yt_v1')) cost = 90;
-                if (data.includes('yt_v2')) cost = 350;
-                if (data.includes('in_f1')) cost = 100;
-                if (data.includes('in_f2')) cost = 200;
-                if (data.includes('in_f3')) cost = 360;
-                if (data.includes('in_v1')) cost = 85;
-                if (data.includes('in_v2')) cost = 320;
-
-                if (users[chatId].points < cost) {
-                    await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.`);
-                    return res.sendStatus(200);
-                }
-                users[chatId].points -= cost;
-            }
-
-            users[chatId].ordersCount += 1;
-            const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
-            users[chatId].lastOrder = orderId;
-
-            // إرسال علامة صح أولاً لتأكيد استلام الرابط
-            await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
-
-            // 🔔 إشعار فوري لك كأدمن بطلب العميل مع الرابط
-            const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
-                `👤 اسم العميل: ${userName}\n` +
-                `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
-                `📦 نوع الطلب: ${data}\n` +
-                `🔗 الرابط / اسم المستخدم: \`${targetInput}\`\n` +
-                `📌 رقم الطلب: \`${orderId}\`\n` +
-                `🪙 التكلفة: ${cost} نقطة`;
-            
-            await sendMessage(ADMIN_CHAT_ID, adminMsg);
-
-            // إرسال الرسالة الثانية للعميل لتأكيد الطلب
-            await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n🔗 الرابط المرسل: \`${targetInput}\`\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`, {
-                inline_keyboard: [[{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]]
-            });
             return res.sendStatus(200);
         }
 
-        if (text === '/start') {
-            if (users[chatId].isRegistered) {
-                const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
-                const menuKeyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
-                            { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
-                        ],
-                        [
-                            { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' },
-                            { text: '👤 حسابي ونقاطي', callback_data: 'my_account' }
-                        ],
-                        [
-                            { text: '📦 تتبع آخر طلب', callback_data: 'track_order' },
-                            { text: '🛠️ الدعم الفني', callback_data: 'support' }
-                        ]
-                    ]
+        if (text) {
+            if (!users[chatId]) {
+                users[chatId] = {
+                    points: 20,
+                    ordersCount: 0,
+                    lastDaily: 0,
+                    lastWheel: 0,
+                    lastMemory: 0,
+                    lastBoxes: 0,
+                    lastShapes: 0,
+                    lastOrder: null,
+                    isRegistered: false,
+                    waitingForInput: null
                 };
-                await sendMessage(chatId, menuText, menuKeyboard);
+            }
+
+            if (users[chatId].waitingForInput) {
+                const pendingService = users[chatId].waitingForInput;
+                
+                if (text.length < 3 || (!text.includes('http') && !text.includes('@') && !text.includes('www.'))) {
+                    await sendMessage(chatId, `❌ **الرابط أو اسم المستخدم غير صحيح!**\nيرجى إرسال رابط صحيح (يبدأ بـ http أو www) أو اسم مستخدم صحيح يحتوي على (@):`);
+                    return res.sendStatus(200);
+                }
+
+                const targetInput = text;
+                users[chatId].waitingForInput = null;
+
+                let cost = 0;
+                const data = pendingService;
+
+                if (data.startsWith('pay_')) {
+                    cost = 90;
+                    if (data.includes('_f2')) cost = 180;
+                    if (data.includes('_f3')) cost = 320;
+                    if (data.includes('_v2')) cost = 300;
+                    if (data.includes('_f1')) cost = 90;
+                    if (data.includes('yt_f1')) cost = 110;
+                    if (data.includes('yt_f2')) cost = 220;
+                    if (data.includes('yt_f3')) cost = 400;
+                    if (data.includes('yt_v1')) cost = 90;
+                    if (data.includes('yt_v2')) cost = 350;
+                    if (data.includes('in_f1')) cost = 100;
+                    if (data.includes('in_f2')) cost = 200;
+                    if (data.includes('in_f3')) cost = 360;
+                    if (data.includes('in_v1')) cost = 85;
+                    if (data.includes('in_v2')) cost = 320;
+
+                    if (users[chatId].points < cost) {
+                        await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.`);
+                        return res.sendStatus(200);
+                    }
+                    users[chatId].points -= cost;
+                }
+
+                users[chatId].ordersCount += 1;
+                const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
+                users[chatId].lastOrder = orderId;
+                const niceServiceName = getServiceNiceName(data);
+
+                await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
+
+                // إشعار الأدمن مع اسم العميل كرابط مباشر لفتح حسابه بضغطة زر
+                const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
+                    `👤 اسم العميل: [${userName}](tg://user?id=${chatId})\n` +
+                    `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
+                    `📦 نوع الطلب: ${niceServiceName}\n` +
+                    `🔗 الرابط / اسم المستخدم: \`${targetInput}\`\n` +
+                    `📌 رقم الطلب: \`${orderId}\`\n` +
+                    `🪙 التكلفة: ${cost} نقطة`;
+                
+                await sendMessage(ADMIN_CHAT_ID, adminMsg);
+
+                await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📦 الخدمة: ${niceServiceName}\n🔗 الرابط المرسل: \`${targetInput}\`\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`, {
+                    inline_keyboard: [[{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]]
+                });
                 return res.sendStatus(200);
             }
 
-            const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
-                `⚠️ **ملاحظة هامة:** لكي تستخدم البوت، يرجى متابعة حساب التيك توك الخاص بنا لمرة واحدة فقط:\n` +
-                `🔗 https://www.tiktok.com/@e..e233\n\n` +
-                `🌸 بعد المتابعة، اضغط على زر **"تأكيد المتابعة ودخول البوت ✅"** بالأسفل لفتح البوت! ✨`;
+            if (text === '/start') {
+                if (users[chatId].isRegistered) {
+                    const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
+                    const menuKeyboard = {
+                        inline_keyboard: [
+                            [
+                                { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
+                                { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
+                            ],
+                            [
+                                { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' },
+                                { text: '👤 حسابي ونقاطي', callback_data: 'my_account' }
+                            ],
+                            [
+                                { text: '📦 تتبع آخر طلب', callback_data: 'track_order' },
+                                { text: '🛠️ الدعم الفني', callback_data: 'support' }
+                            ]
+                        ]
+                    };
+                    await sendMessage(chatId, menuText, menuKeyboard);
+                    return res.sendStatus(200);
+                }
 
-            const subKeyboard = {
-                inline_keyboard: [
-                    [{ text: '🎵 اضغط هنا لمتابعة حساب التيك توك', url: 'https://www.tiktok.com/@e..e233' }],
-                    [{ text: '✅ تأكيد المتابعة ودخول البوت', callback_data: 'check_subscription' }]
-                ]
-            };
-            await sendMessage(chatId, subText, subKeyboard);
+                const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
+                    `⚠️ **ملاحظة هامة:** لكي تستخدم البوت، يرجى متابعة حساب التيك توك الخاص بنا لمرة واحدة فقط:\n` +
+                    `🔗 https://www.tiktok.com/@e..e233\n\n` +
+                    `🌸 بعد المتابعة، اضغط على زر **"تأكيد المتابعة ودخول البوت ✅"** بالأسفل لفتح البوت! ✨`;
+
+                const subKeyboard = {
+                    inline_keyboard: [
+                        [{ text: '🎵 اضغط هنا لمتابعة حساب التيك توك', url: 'https://www.tiktok.com/@e..e233' }],
+                        [{ text: '✅ تأكيد المتابعة ودخول البوت', callback_data: 'check_subscription' }]
+                    ]
+                };
+                await sendMessage(chatId, subText, subKeyboard);
+            }
         }
     } 
     else if (update.callback_query) {
@@ -267,7 +316,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             };
             await editMessageText(chatId, messageId, gamesText, gamesKeyboard);
         }
-        // --- الألعاب ---
         else if (data === 'play_memory') {
             if (now - users[chatId].lastMemory < oneDay) {
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
@@ -570,9 +618,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             await editMessageText(chatId, messageId, `👁️ **باقات مشاهدات انستقرام:**\nرصيدك: ${users[chatId].points} نقطة`, kb);
         }
 
-        // --- عند اختيار أي خدمة (مجانية أو مدفوعة): نطلب منه إرسال الرابط أولاً ---
         else if (data.startsWith('free_') || data.startsWith('pay_')) {
-            // التحقق المبدئي للرصيد إذا كانت الخدمة مدفوعة قبل طلب الرابط
             if (data.startsWith('pay_')) {
                 let cost = 90;
                 if (data.includes('_f2')) cost = 180;
@@ -600,7 +646,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 }
             }
 
-            // تعيين حالة الانتظار لهذا المستخدم ليقوم بإرسال الرابط أو اسم المستخدم
             users[chatId].waitingForInput = data;
 
             await editMessageText(chatId, messageId, `🔗 **أرسل الآن في الشات رابط المقطع أو اسم المستخدم المطلوب للخدمة:**\n*(مثال: رابط الفيديو أو حسابك مثل @username)*`, {
