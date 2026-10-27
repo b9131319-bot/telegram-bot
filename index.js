@@ -81,13 +81,14 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const chatId = update.message.chat.id;
         const text = update.message.text;
         const userName = update.message.from.first_name || 'مستخدم';
+        const userUsername = update.message.from.username ? `@${update.message.from.username}` : 'لا يوجد';
 
         // --- تفعيل الرد (Reply) من الأدمن ليذهب للعميل مباشرة ---
         if (chatId.toString() === ADMIN_CHAT_ID.toString() && update.message.reply_to_message) {
             const repliedMessage = update.message.reply_to_message;
             const repliedText = repliedMessage.text || '';
 
-            const idMatch = repliedText.match(/معرف العميل \(ID\):\s*`(\d+)`/) || repliedText.match(/(\d+)\s*:\s*\(ID\)/);
+            const idMatch = repliedText.match(/معرف العميل \(ID\):\s*`(\d+)`/) || repliedText.match(/tg:\/\/user\?id=(\d+)/);
             const orderIdMatch = repliedText.match(/رقم الطلب:\s*`([A-Z0-9-]+)`/);
 
             if (idMatch && idMatch[1]) {
@@ -161,10 +162,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
                 await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
 
-                // إشعار الأدمن مع اسم العميل كرابط مباشر + عرض الآيدي النصي الواضح
+                // إشعار الأدمن مع اسم العميل، المعرف، واسم المستخدم
                 const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                     `👤 اسم العميل: [${userName}](tg://user?id=${chatId})\n` +
                     `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
+                    `🪪 أسم المستخدم: \`${userUsername}\`\n` +
                     `📦 نوع الطلب: ${niceServiceName}\n` +
                     `🔗 الرابط / اسم المستخدم: \`${targetInput}\`\n` +
                     `📌 رقم الطلب: \`${orderId}\`\n` +
