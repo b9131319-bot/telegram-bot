@@ -6,6 +6,7 @@ const app = express();
 app.use(bodyParser.json());
 
 const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
+const ADMIN_CHAT_ID = '8266396167'; // ⚠️ ضع الآدي (ID) الخاص بك هنا لتصلك طلبات العملاء
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 
 const users = {};
@@ -85,14 +86,13 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             users[chatId].isSubscribed = false;
 
             const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
-                `⚠️ **عذراً يا غالي، لا يمكنك استخدام البوت أو ظهور القائمة حتى تقوم بمتابعة حساب التيك توك الإجباري:**\n` +
-                `🔗 https://www.tiktok.com/@e..e233\n\n` +
-                `🌸 بعد إتمام المتابعة، اضغط على زر **"تحقق من المتابعة ✅"** بالأسفل لفتح البوت! ✨`;
+                `⚠️ **تنبيه هام:** للأسف خوارزميات تليجرام لا تكتشف المتابعة التلقائية، لذلك يرجى الضغط على زر الرابط أدناه ومتابعة الحساب يدوياً، ثم اضغط **"تأكيد المتابعة ودخول البوت ✅"**:\n` +
+                `🔗 https://www.tiktok.com/@e..e233`;
 
             const subKeyboard = {
                 inline_keyboard: [
-                    [{ text: '🔗 رابط حساب التيك توك', url: 'https://www.tiktok.com/@e..e233' }],
-                    [{ text: '✅ تحقق من المتابعة لفتح البوت', callback_data: 'check_subscription' }]
+                    [{ text: '🎵 اضغط هنا لمتابعة حساب التيك توك', url: 'https://www.tiktok.com/@e..e233' }],
+                    [{ text: '✅ تأكيد المتابعة ودخول البوت', callback_data: 'check_subscription' }]
                 ]
             };
             await sendMessage(chatId, subText, subKeyboard);
@@ -102,6 +102,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const chatId = update.callback_query.message.chat.id;
         const messageId = update.callback_query.message.message_id;
         const data = update.callback_query.data;
+        const userFirstName = update.callback_query.from.first_name || 'مستخدم';
 
         if (!users[chatId]) {
             users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastSocialTask: 0, lastOrder: null, gameMode: null, targetNum: null, isSubscribed: false };
@@ -137,7 +138,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
 
         if (!users[chatId].isSubscribed) {
-            await sendMessage(chatId, `⚠️ عذراً يا غالي! يجب عليك أولاً متابعة حساب التيك توك الأساسي والضغط على زر التحقق.\n🔗 https://www.tiktok.com/@e..e233`);
+            await sendMessage(chatId, `⚠️ عذراً يا غالي! يجب عليك متابعة حساب التيك توك أولاً والضغط على زر التأكيد لكي يعمل معك البوت.\n🔗 https://www.tiktok.com/@e..e233`);
             return res.sendStatus(200);
         }
 
@@ -168,12 +169,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const taskText = `📌 **قسم نقاط متابعة الحسابات:**\n\n` +
                 `قم بمتابعة الحساب التالي لتربح **15 نقطة** 🪙:\n` +
                 `🔗 https://www.tiktok.com/@a8000396?_r=1&_t=ZS-9At4ZfeZ0bK\n\n` +
-                `بعد إتمام المتابعة، اضغط على زر التحقق أدناه لاستلام نقاطك! ✨`;
+                `بعد إتمام المتابعة، اضغط على زر التأكيد أدناه لاستلام نقاطك! ✨`;
             
             const taskKb = {
                 inline_keyboard: [
                     [{ text: '🔗 رابط الحساب المطلوب', url: 'https://www.tiktok.com/@a8000396?_r=1&_t=ZS-9At4ZfeZ0bK' }],
-                    [{ text: '✅ تحقق وأضف 15 نقطة', callback_data: 'claim_social_task' }],
+                    [{ text: '✅ تأكيد المتابعة وأضف 15 نقطة', callback_data: 'claim_social_task' }],
                     [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
                 ]
             };
@@ -187,7 +188,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             } else {
                 users[chatId].lastSocialTask = now;
                 users[chatId].points += 15;
-                await sendMessage(chatId, `🎉 مبروك يا وحش! تم التحقق بنجاح وإضافة *15 نقطة* لرصيدك 🪙.\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
+                await sendMessage(chatId, `🎉 مبروك يا وحش! تم تأكيد المتابعة وإضافة *15 نقطة* لرصيدك 🪙.\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
             }
         }
         else if (data === 'daily_gift') {
@@ -362,40 +363,51 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             await editMessageText(chatId, messageId, `👁️ **باقات مشاهدات انستقرام:**\nرصيدك: ${users[chatId].points} نقطة`, kb);
         }
 
-        // --- معالجة الطلبات ---
-        else if (data.startsWith('free_')) {
-            users[chatId].ordersCount += 1;
-            const orderId = 'FREE-' + Math.floor(100000 + Math.random() * 900000);
-            users[chatId].lastOrder = orderId;
-            await sendMessage(chatId, `✅ **تم تنفيذ الخدمة المجانية بنجاح!**\n📌 رقم الطلب: \`${orderId}\`\nجاري التنفيذ الفوري 🚀\n🤍`);
-        }
-        else if (data.startsWith('pay_')) {
-            let cost = 90;
-            if (data.includes('_f2')) cost = 180;
-            if (data.includes('_f3')) cost = 320;
-            if (data.includes('_v2')) cost = 300;
-            if (data.includes('_f1')) cost = 90;
-            if (data.includes('yt_f1')) cost = 110;
-            if (data.includes('yt_f2')) cost = 220;
-            if (data.includes('yt_f3')) cost = 400;
-            if (data.includes('yt_v1')) cost = 90;
-            if (data.includes('yt_v2')) cost = 350;
-            if (data.includes('in_f1')) cost = 100;
-            if (data.includes('in_f2')) cost = 200;
-            if (data.includes('in_f3')) cost = 360;
-            if (data.includes('in_v1')) cost = 85;
-            if (data.includes('in_v2')) cost = 320;
+        // --- معالجة الطلبات وإرسال إشعار لك كأدمن ---
+        else if (data.startsWith('free_') || data.startsWith('pay_')) {
+            let serviceName = data;
+            let cost = 0;
 
-            if (users[chatId].points < cost) {
-                await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.\nاجمع النقاط من الألعاب أو الهدية اليومية! 🪙`);
-            } else {
+            if (data.startsWith('pay_')) {
+                cost = 90;
+                if (data.includes('_f2')) cost = 180;
+                if (data.includes('_f3')) cost = 320;
+                if (data.includes('_v2')) cost = 300;
+                if (data.includes('_f1')) cost = 90;
+                if (data.includes('yt_f1')) cost = 110;
+                if (data.includes('yt_f2')) cost = 220;
+                if (data.includes('yt_f3')) cost = 400;
+                if (data.includes('yt_v1')) cost = 90;
+                if (data.includes('yt_v2')) cost = 350;
+                if (data.includes('in_f1')) cost = 100;
+                if (data.includes('in_f2')) cost = 200;
+                if (data.includes('in_f3')) cost = 360;
+                if (data.includes('in_v1')) cost = 85;
+                if (data.includes('in_v2')) cost = 320;
+
+                if (users[chatId].points < cost) {
+                    await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.\nاجمع النقاط من الألعاب أو الهدية اليومية! 🪙`);
+                    return res.sendStatus(200);
+                }
                 users[chatId].points -= cost;
-                users[chatId].ordersCount += 1;
-                const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-                users[chatId].lastOrder = orderId;
-
-                await sendMessage(chatId, `✅ **تم خصم ${cost} نقطة وقبول طلبك بنجاح!**\n\n📌 رقم طلبك للتتبع: \`${orderId}\`\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\nجاري التنفيذ... 🚀\n🤍`);
             }
+
+            users[chatId].ordersCount += 1;
+            const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
+            users[chatId].lastOrder = orderId;
+
+            // 🔔 إرسال إشعار فوراً إلى صاحب البوت (أنت) بطلب العميل الجديد
+            const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
+                `👤 اسم العميل: ${userFirstName}\n` +
+                `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
+                `📦 نوع الطلب: ${data}\n` +
+                `📌 رقم الطلب: \`${orderId}\`\n` +
+                `🪙 التكلفة: ${cost} نقطة`;
+            
+            await sendMessage(ADMIN_CHAT_ID, adminMsg);
+
+            // الرد على العميل
+            await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`);
         }
         else if (data === 'my_account') {
             const accText = `👤 **معلومات حسابك:**\n\n` +
