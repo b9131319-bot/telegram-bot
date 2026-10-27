@@ -9,7 +9,8 @@ const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
 const ADMIN_CHAT_ID = '8266396167'; // ⚠️ معرف الآدي الخاص بك كأدمن
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 
-const users = {}; // تخزين بيانات المستخدمين
+const users = {};    // بيانات المستخدمين
+const giftCodes = {}; // تخزين روابط/كوبونات النقاط النشطة
 
 async function sendMessage(chatId, text, replyMarkup = null, replyToMessageId = null) {
     try {
@@ -46,7 +47,6 @@ async function editMessageText(chatId, messageId, text, replyMarkup = null) {
     } catch (error) {}
 }
 
-// دالة تحويل كود الطلب إلى اسم عربي واضح
 function getServiceNiceName(data) {
     const names = {
         'free_tk_live': 'خدمة مجانية: تكبيس لايف تيك توك (10 شيرات)',
@@ -100,29 +100,86 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     lastBoxes: 0,
                     lastShapes: 0,
                     lastOrder: null,
-                    waitingForInput: null
+                    waitingForInput: null,
+                    waitingForGiftCreation: false,
+                    waitingForBroadcast: false
                 };
             } else {
                 users[chatId].name = userName;
                 users[chatId].username = userUsername;
             }
 
-            // لوحة تحكم الأدمن بأمر /admin
-            if (chatId.toString() === ADMIN_CHAT_ID.toString() && text === '/admin') {
+            // --- إذا كان الأدمن يرسل رسالة الإذاعة للجميع ---
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && users[chatId].waitingForBroadcast) {
+                users[chatId].waitingForBroadcast = false;
+                const broadcastText = text;
                 const allUserIds = Object.keys(users);
-                let adminPanelText = `🛠️ **لوحة تحكم الأدمن - قائمة المستخدمين (${allUserIds.length}):**\n\n`;
-                
-                allUserIds.forEach((id, index) => {
-                    const u = users[id];
-                    adminPanelText += `${index + 1}. [${u.name}](tg://user?id=${id}) | ID: \`${id}\` | اليوزر: \`${u.username}\` | النقاط: ${u.points}\n`;
-                });
+                let successCount = 0;
 
-                if (adminPanelText.length > 4000) {
-                    adminPanelText = adminPanelText.substring(0, 3900) + "\n\n... (القائمة طويلة جداً)";
+                for (const uid of allUserIds) {
+                    try {
+                        await sendMessage(uid, `📢 **رسالة من الإدارة:**\n\n${broadcastText}`);
+                        successCount++;
+                    } catch (e) {
+                        // تجاهل المستخدمين الذين قاموا بحظر البوت
+                    }
                 }
 
-                await sendMessage(chatId, adminPanelText);
+                await sendMessage(ADMIN_CHAT_ID, `✅ **تم إرسال الإذاعة بنجاح!**\nتمت الإرسال إلى *${successCount}* مستخدم.`);
                 return res.sendStatus(200);
+            }
+
+            // إذا كان الأدمن يكتب تفاصيل الهدية (النقاط + المدة)
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && users[chatId].waitingForGiftCreation) {
+                users[chatId].waitingForGiftCreation = false;
+                const parts = text.split(' ');
+                const pointsAmount = parseInt(parts[0]);
+                const hoursDuration = parseInt(parts[1]) || 24;
+
+                if (isNaN(pointsAmount) || pointsAmount <= 0) {
+                    await sendMessage(chatId, `❌ **خطأ!** يرجى إرسال الصيغة الصحيحة:\n\`النقاط الساعات\`\nمثال: \`50 12\``);
+                    return res.sendStatus(200);
+                }
+
+                const codeId = 'GIFT-' + Math.floor(100000 + Math.random() * 900000);
+                const expiresAt = Date.now() + (hoursDuration * 60 * 60 * 1000);
+
+                giftCodes[codeId] = {
+                    points: pointsAmount,
+                    expiresAt: expiresAt,
+                    usedBy: []
+                };
+
+                const botUsername = "abod_store_bot"; 
+                const giftLink = `https://t.me/${botUsername}?start=${codeId}`;
+
+                await sendMessage(chatId, `✅ **تم إنشاء رابط النقاط بنجاح!**\n\n🎁 النقاط: *${pointsAmount} نقطة*\n⏳ المدة: *${hoursDuration} ساعة*\n🔗 الرابط:\n\`${giftLink}\``);
+                return res.sendStatus(200);
+            }
+
+            if (text && text.startsWith('/start ')) {
+                const startPayload = text.split(' ')[1];
+
+                if (startPayload && giftCodes[startPayload]) {
+                    const gift = giftCodes[startPayload];
+                    const now = Date.now();
+
+                    if (now > gift.expiresAt) {
+                        await sendMessage(chatId, `❌ **عذراً، انتهت صلاحية رابط الهدية هذا!**`);
+                        return res.sendStatus(200);
+                    }
+
+                    if (gift.usedBy.includes(chatId)) {
+                        await sendMessage(chatId, `⚠️ **لقد قمت باستلام هذه الهدية مسبقاً ولا يمكنك استخدامها مرتين!**`);
+                        return res.sendStatus(200);
+                    }
+
+                    gift.usedBy.push(chatId);
+                    users[chatId].points += gift.points;
+
+                    await sendMessage(chatId, `🎉 **مبروك يا غالي!**\nتم استلام الهدية بنجاح وتم إضافة **${gift.points} نقطة** إلى رصيدك 🪙!\nرصيدك الحالي: *${users[chatId].points} نقطة*.`);
+                    return res.sendStatus(200);
+                }
             }
 
             // تفعيل الرد (Reply) من الأدمن للعميل
@@ -238,7 +295,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     ];
 
                     if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
-                        keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين)', callback_data: 'admin_users_list' }]);
+                        keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين والروابط والإذاعة)', callback_data: 'admin_panel' }]);
                     }
 
                     const menuKeyboard = { inline_keyboard: keyboardRows };
@@ -254,10 +311,9 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const data = callbackQuery.data;
 
             if (!users[chatId]) {
-                users[chatId] = { name: 'مستخدم', username: 'لا يوجد', points: 0, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastMemory: 0, lastBoxes: 0, lastShapes: 0, lastOrder: null, waitingForInput: null };
+                users[chatId] = { name: 'مستخدم', username: 'لا يوجد', points: 0, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastMemory: 0, lastBoxes: 0, lastShapes: 0, lastOrder: null, waitingForInput: null, waitingForGiftCreation: false, waitingForBroadcast: false };
             }
 
-            // معالجة زر التحقق القديم لمنع أي تعليق (يفتح القائمة الرئيسية فوراً)
             if (data === 'check_subscription') {
                 const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
                 
@@ -277,10 +333,43 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 ];
 
                 if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
-                    keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين)', callback_data: 'admin_users_list' }]);
+                    keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين والروابط والإذاعة)', callback_data: 'admin_panel' }]);
                 }
 
                 await editMessageText(chatId, messageId, menuText, { inline_keyboard: keyboardRows });
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            // لوحة تحكم الأدمن والخيارات بجانب بعضها
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_panel') {
+                const adminKeyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: '📊 عرض المستخدمين', callback_data: 'admin_users_list' },
+                            { text: '🎁 رابط نقاط', callback_data: 'admin_create_gift' }
+                        ],
+                        [
+                            { text: '📢 إذاعة للجميع', callback_data: 'admin_broadcast' }
+                        ],
+                        [{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, `🛠️ **لوحة تحكم الأدمن:**`, adminKeyboard);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_broadcast') {
+                users[chatId].waitingForBroadcast = true;
+                await sendMessage(chatId, `📢 **إذاعة عامة لجميع المستخدمين:**\n\nأرسل الآن في الشات الرسالة التي تريد إرسالها لكل من دخل البوت:`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_create_gift') {
+                users[chatId].waitingForGiftCreation = true;
+                await sendMessage(chatId, `🎁 **إنشاء رابط نقاط جديد:**\n\nأرسل الآن في الشات عدد النقاط والمدة بالساعات بهذا الشكل:\n\`النقاط الساعات\`\n\n*مثال:* \`100 24\``);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
@@ -334,6 +423,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             if (data === 'main_menu') {
                 users[chatId].waitingForInput = null;
+                users[chatId].waitingForGiftCreation = false;
+                users[chatId].waitingForBroadcast = false;
                 const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
                 
                 let keyboardRows = [
@@ -352,7 +443,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 ];
 
                 if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
-                    keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين)', callback_data: 'admin_users_list' }]);
+                    keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين والروابط والإذاعة)', callback_data: 'admin_panel' }]);
                 }
 
                 const menuKeyboard = { inline_keyboard: keyboardRows };
