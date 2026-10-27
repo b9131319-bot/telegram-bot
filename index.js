@@ -21,7 +21,8 @@ async function sendMessage(chatId, text, replyMarkup = null) {
         if (replyMarkup) {
             payload.reply_markup = replyMarkup;
         }
-        await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
+        const response = await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
+        return response.data.result.message_id;
     } catch (error) {
         console.error('خطأ في إرسال الرسالة:', error.response?.data || error.message);
     }
@@ -39,6 +40,15 @@ async function editMessageText(chatId, messageId, text, replyMarkup = null) {
             payload.reply_markup = replyMarkup;
         }
         await axios.post(`${TELEGRAM_API}/editMessageText`, payload);
+    } catch (error) {}
+}
+
+async function deleteMessage(chatId, messageId) {
+    try {
+        await axios.post(`${TELEGRAM_API}/deleteMessage`, {
+            chat_id: chatId,
+            message_id: messageId
+        });
     } catch (error) {}
 }
 
@@ -60,12 +70,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 gameMode: null,
                 targetNum: null,
                 memoryAnswer: null,
-                isRegistered: false // مؤشر لتحديد هل تم التحقق من المتابعة
+                isRegistered: false
             };
         }
 
         if (text === '/start') {
-            // إذا كان مسجلاً مسبقاً وتم التحقق، نفتح القائمة مباشرة
             if (users[chatId].isRegistered) {
                 const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
                 const menuKeyboard = {
@@ -88,7 +97,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // إذا لم يتابع بعد، نظهر له رسالة الاشتراك الإجباري
             const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
                 `⚠️ **ملاحظة هامة:** لكي تستخدم البوت، يرجى متابعة حساب التيك توك الخاص بنا لمرة واحدة فقط:\n` +
                 `🔗 https://www.tiktok.com/@e..e233\n\n` +
@@ -104,18 +112,18 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
     } 
     else if (update.callback_query) {
-        const chatId = update.callback_query.message.chat.id;
-        const messageId = update.callback_query.message.message_id;
-        const data = update.callback_query.data;
-        const userFirstName = update.callback_query.from.first_name || 'مستخدم';
+        const callbackQuery = update.callback_query;
+        const chatId = callbackQuery.message.chat.id;
+        const messageId = callbackQuery.message.message_id;
+        const data = callbackQuery.data;
+        const userFirstName = callbackQuery.from.first_name || 'مستخدم';
 
         if (!users[chatId]) {
             users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastOrder: null, gameMode: null, targetNum: null, memoryAnswer: null, isRegistered: false };
         }
 
-        // زر التحقق الإجباري من المتابعة (لا يعمل إلا بالضغط عليه)
         if (data === 'check_subscription') {
-            users[chatId].isRegistered = true; // تم التحقق بنجاح
+            users[chatId].isRegistered = true;
 
             const welcomeText = `🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨\n\n` +
                 `🎁 تم التحقق بنجاح وفتح جميع خدمات البوت والألعاب لك! اختر ما يناسبك من القائمة أدناه:`;
@@ -140,9 +148,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             return res.sendStatus(200);
         }
 
-        // حماية عامة: إذا لم يضغط زر التحقق أولاً، نمنعه من تنفيذ أي زر آخر ونعيده لرسالة الاشتراك
         if (!users[chatId].isRegistered) {
-            await sendMessage(chatId, `⚠️ **عذراً، يجب عليك متابعة حساب التيك توك والضغط على زر "تأكيد المتابعة" أولاً لكي يعمل البوت!**\n🔗 https://www.tiktok.com/@e..e233`);
+            await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                callback_query_id: callbackQuery.id,
+                text: '⚠️ يجب متابعة حساب التيك توك وتأكيد المتابعة أولاً!',
+                show_alert: true
+            });
             return res.sendStatus(200);
         }
 
@@ -170,11 +181,17 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const now = Date.now();
             const oneDay = 24 * 60 * 60 * 1000;
             if (now - users[chatId].lastDaily < oneDay) {
-                await sendMessage(chatId, `⏳ لقد استلمت هديتك اليومية مسبقاً! عُد بعد 24 ساعة.`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                    callback_query_id: callbackQuery.id,
+                    text: '⏳ لقد استلمت هديتك اليومية مسبقاً! عُد بعد 24 ساعة.',
+                    show_alert: true
+                });
             } else {
                 users[chatId].lastDaily = now;
                 users[chatId].points += 20;
-                await sendMessage(chatId, `🎉 مبروك يا غالي! حصلت على هديتك اليومية *20 نقطة* 🪙.\nرصيدك: ${users[chatId].points} نقطة.`);
+                await editMessageText(chatId, messageId, `🎉 **مبروك يا غالي!**\nحصلت على هديتك اليومية *20 نقطة* 🪙.\nرصيدك الحالي: ${users[chatId].points} نقطة.`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+                });
             }
         }
         else if (data === 'games_menu') {
@@ -190,7 +207,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             };
             await editMessageText(chatId, messageId, gamesText, gamesKeyboard);
         }
-        // --- لعبة تذكر الرمز السريع ---
+        // --- لعبة تذكر الرمز (تم إصلاح بقاء الرمز وحذفه تماماً) ---
         else if (data === 'play_memory') {
             const codes = ['73', '48', '91', '25', '64'];
             const correctCode = codes[Math.floor(Math.random() * codes.length)];
@@ -203,7 +220,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             const options = [correctCode, opt1, opt2].sort(() => Math.random() - 0.5);
 
-            await sendMessage(chatId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي بعد ثانيتين... جهز تركيزك!)* ⏳`);
+            // إظهار الرمز مؤقتاً في نفس الرسالة
+            await editMessageText(chatId, messageId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي بعد ثانيتين... جهز تركيزك!)* ⏳`);
 
             setTimeout(async () => {
                 const memKeyboard = {
@@ -216,7 +234,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         [{ text: '⬅️ إلغاء', callback_data: 'games_menu' }]
                     ]
                 };
-                await sendMessage(chatId, `🎯 **انتهى الوقت! اختر الرمز الصحيح الذي ظهر لك قبل قليل:**`, memKeyboard);
+                // تحديث نفس الرسالة واختفاء الرمز وعرض الخيارات فقط
+                await editMessageText(chatId, messageId, `🎯 **انتهى الوقت! اختر الرمز الصحيح الذي ظهر لك قبل قليل:**`, memKeyboard);
             }, 2500);
         }
         else if (data.startsWith('mem_')) {
@@ -226,12 +245,22 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             if (chosen === correct) {
                 users[chatId].points += 25;
-                await editMessageText(chatId, messageId, `🎉 **كفووو يا بطل!**\nاخترت الرمز الصحيح (\`${correct}\`) بدقة تامة!\n+25 نقطة أضيفت لرصيدك 🪙 (رصيدك الحالي: ${users[chatId].points})`);
+                await editMessageText(chatId, messageId, `🎉 **كفووو يا بطل!**\nاخترت الرمز الصحيح (\`${correct}\`) بدقة تامة!\n+25 نقطة أضيفت لرصيدك 🪙 (رصيدك الحالي: ${users[chatId].points})`, {
+                    inline_keyboard: [
+                        [{ text: '🔄 العب مجدداً', callback_data: 'play_memory' }],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                });
             } else {
-                await editMessageText(chatId, messageId, `❌ **هاردلك!**\nاخترت (${chosen}) بينما الرمز الصحيح كان (\`${correct}\`). حاول مرة أخرى!`);
+                await editMessageText(chatId, messageId, `❌ **هاردلك!**\nاخترت (${chosen}) بينما الرمز الصحيح كان (\`${correct}\`). حاول مرة أخرى!\n\nرصيدك الحالي: ${users[chatId].points} نقطة`, {
+                    inline_keyboard: [
+                        [{ text: '🔄 حاول مرة أخرى', callback_data: 'play_memory' }],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                });
             }
         }
-        // --- لعبة الصناديق الجديدة ---
+        // --- لعبة الصناديق (داخل نفس الرسالة لتوفير المساحة) ---
         else if (data === 'play_boxes') {
             const boxKeyboard = {
                 inline_keyboard: [
@@ -243,23 +272,33 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     [{ text: '⬅️ رجوع', callback_data: 'games_menu' }]
                 ]
             };
-            await sendMessage(chatId, `📦 **لعبة الصناديق العشوائية!**\nأمامك 3 صناديق: صندوقين تحتويان على نقاط (بحد أقصى 50 نقطة) وصندوق فارغ.\nاختر صندوقاً بحذر:`, boxKeyboard);
+            await editMessageText(chatId, messageId, `📦 **لعبة الصناديق العشوائية!**\nأمامك 3 صناديق: صندوقين تحتويان على نقاط (بحد أقصى 50 نقطة) وصندوق فارغ.\nاختر صندوقاً بحذر:`, boxKeyboard);
         }
         else if (data.startsWith('box_')) {
             const chosenBox = parseInt(data.split('_')[1]);
-            const emptyBox = Math.floor(Math.random() * 3); // الصندوق الفارغ يتغير كل مرة عشوائياً
+            const emptyBox = Math.floor(Math.random() * 3);
 
             if (chosenBox === emptyBox) {
-                await editMessageText(chatId, messageId, `❌ **معوض خير خسرت!**\nالصندوق الذي اخترته كان فارغاً.\n\nرصيدك الحالي: ${users[chatId].points} نقطة 🪙`);
+                await editMessageText(chatId, messageId, `❌ **معوض خير خسرت!**\nالصندوق الذي اخترته كان فارغاً.\n\nرصيدك الحالي: ${users[chatId].points} نقطة 🪙`, {
+                    inline_keyboard: [
+                        [{ text: '🔄 حاول مرة أخرى', callback_data: 'play_boxes' }],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                });
             } else {
-                const wonPoints = Math.floor(Math.random() * 50) + 1; // نقاط عشوائية بحد أقصى 50
+                const wonPoints = Math.floor(Math.random() * 50) + 1;
                 users[chatId].points += wonPoints;
-                await editMessageText(chatId, messageId, `🎉 **مبروك يا غالي!**\nفتحت صندوقاً مليئاً بالنقاط وربحت **${wonPoints} نقطة** 🪙!\n\nرصيدك الجديد: ${users[chatId].points} نقطة.`);
+                await editMessageText(chatId, messageId, `🎉 **مبروك يا غالي!**\nفتحت صندوقاً مليئاً بالنقاط وربحت **${wonPoints} نقطة** 🪙!\n\nرصيدك الجديد: ${users[chatId].points} نقطة.`, {
+                    inline_keyboard: [
+                        [{ text: '🔄 العب مجدداً', callback_data: 'play_boxes' }],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                });
             }
         }
-        // --- لعبة الأشكال المختلفة الجديدة (خلال 3 ثوانٍ) ---
+        // --- لعبة الأشكال المختلفة (داخل نفس الرسالة لتوفير المساحة) ---
         else if (data === 'play_shapes') {
-            const correctIndex = Math.floor(Math.random() * 4); // الشكل المختلف يتغير عشوائياً
+            const correctIndex = Math.floor(Math.random() * 4);
             users[chatId].currentShapeCorrect = correctIndex;
 
             const shapesList = ['⭐', '🟢', '🟥', '🔷'];
@@ -277,7 +316,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     [{ text: '⬅️ إلغاء', callback_data: 'games_menu' }]
                 ]
             };
-            await sendMessage(chatId, `⏱️ **لعبة الأشكال المختلفة!**\nأمامك 4 أشكال، اختر الشكل **المختلف** بسرعة خلال **3 ثوانٍ**!`, shapeKeyboard);
+            await editMessageText(chatId, messageId, `⏱️ **لعبة الأشكال المختلفة!**\nأمامك 4 أشكال، اختر الشكل **المختلف** بسرعة خلال **3 ثوانٍ**!`, shapeKeyboard);
         }
         else if (data.startsWith('shape_')) {
             const choice = parseInt(data.split('_')[1]);
@@ -285,21 +324,37 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             if (choice === correctIndex) {
                 users[chatId].points += 25;
-                await editMessageText(chatId, messageId, `✅ **إجابة صحيحة وفي الوقت المناسب!**\nحصلت على **25 نقطة** 🪙.\n\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
+                await editMessageText(chatId, messageId, `✅ **إجابة صحيحة وفي الوقت المناسب!**\nحصلت على **25 نقطة** 🪙.\n\nرصيدك الحالي: ${users[chatId].points} نقطة.`, {
+                    inline_keyboard: [
+                        [{ text: '🔄 العب مجدداً', callback_data: 'play_shapes' }],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                });
             } else {
-                await editMessageText(chatId, messageId, `❌ **إجابة خاطئة أو انتهى الوقت (3 ثوانٍ)!**\nهاردلك، حاول مرة أخرى.\n\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
+                await editMessageText(chatId, messageId, `❌ **إجابة خاطئة أو انتهى الوقت (3 ثوانٍ)!**\nهاردلك، حاول مرة أخرى.\n\nرصيدك الحالي: ${users[chatId].points} نقطة.`, {
+                    inline_keyboard: [
+                        [{ text: '🔄 حاول مرة أخرى', callback_data: 'play_shapes' }],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                });
             }
         }
         else if (data === 'lucky_wheel') {
             const now = Date.now();
             const oneDay = 24 * 60 * 60 * 1000;
             if (now - users[chatId].lastWheel < oneDay) {
-                await sendMessage(chatId, `⏳ لقد استخدمت عجلة الحظ اليوم! مسموح لك مرة واحدة كل 24 ساعة.`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                    callback_query_id: callbackQuery.id,
+                    text: '⏳ لقد استخدمت عجلة الحظ اليوم! مسموح لك مرة واحدة كل 24 ساعة.',
+                    show_alert: true
+                });
             } else {
                 users[chatId].lastWheel = now;
                 const prize = Math.floor(Math.random() * 40) + 10;
                 users[chatId].points += prize;
-                await sendMessage(chatId, `🎡 دَارَت عجلة الحظ وربحت: *${prize} نقطة* 🪙!\nرصيدك الإجمالي: ${users[chatId].points} نقطة.`);
+                await editMessageText(chatId, messageId, `🎡 **دَارَت عجلة الحظ وربحت:** *${prize} نقطة* 🪙!\nرصيدك الإجمالي: ${users[chatId].points} نقطة.`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]]
+                });
             }
         }
         else if (data === 'services_menu') {
@@ -442,7 +497,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 if (data.includes('in_v2')) cost = 320;
 
                 if (users[chatId].points < cost) {
-                    await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.\nاجمع النقاط من الألعاب أو الهدية اليومية! 🪙`);
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                        callback_query_id: callbackQuery.id,
+                        text: `❌ رصيدك غير كافٍ! لديك ${users[chatId].points} نقطة وتحتاج إلى ${cost} نقطة.`,
+                        show_alert: true
+                    });
                     return res.sendStatus(200);
                 }
                 users[chatId].points -= cost;
@@ -452,7 +511,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
             users[chatId].lastOrder = orderId;
 
-            // 🔔 إشعار فوري لك كأدمن بطلب العميل
             const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                 `👤 اسم العميل: ${userFirstName}\n` +
                 `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
@@ -462,7 +520,9 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             
             await sendMessage(ADMIN_CHAT_ID, adminMsg);
 
-            await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`);
+            await editMessageText(chatId, messageId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`, {
+                inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+            });
         }
         else if (data === 'my_account') {
             const accText = `👤 **معلومات حسابك:**\n\n` +
@@ -479,13 +539,21 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
         else if (data === 'track_order') {
             if (!users[chatId].lastOrder) {
-                await sendMessage(chatId, `⚠️ ليس لديك أي طلبات سابقة لتتبعها!`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                    callback_query_id: callbackQuery.id,
+                    text: '⚠️ ليس لديك أي طلبات سابقة لتتبعها!',
+                    show_alert: true
+                });
             } else {
-                await sendMessage(chatId, `📌 **تتبع الطلب الأخير:**\nرقم طلبك: \`${users[chatId].lastOrder}\`\nحالة الطلب: جاري التنفيذ بنجاح 🚀\n🤍`);
+                await editMessageText(chatId, messageId, `📌 **تتبع الطلب الأخير:**\nرقم طلبك: \`${users[chatId].lastOrder}\`\nحالة الطلب: جاري التنفيذ بنجاح 🚀\n🤍`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+                });
             }
         }
         else if (data === 'support') {
-            await sendMessage(chatId, `🛠️ **الدعم الفني والخدمات:**\n👤 @abod097644`);
+            await editMessageText(chatId, messageId, `🛠️ **الدعم الفني والخدمات:**\n👤 @abod097644`, {
+                inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+            });
         }
     }
 
