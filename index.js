@@ -46,7 +46,7 @@ async function editMessageText(chatId, messageId, text, replyMarkup = null) {
     } catch (error) {}
 }
 
-// دالة لتحويل كود الطلب إلى اسم عربي واضح
+// دالة تحويل كود الطلب إلى اسم عربي واضح
 function getServiceNiceName(data) {
     const names = {
         'free_tk_live': 'خدمة مجانية: تكبيس لايف تيك توك (10 شيرات)',
@@ -82,12 +82,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const text = update.message.text;
         const userName = update.message.from.first_name || 'مستخدم';
 
-        // --- نظام الرد من الأدمن على رسائل الإشعارات (للعملاء) ---
+        // --- تفعيل الرد (Reply) من الأدمن ليذهب للعميل مباشرة ---
         if (chatId.toString() === ADMIN_CHAT_ID.toString() && update.message.reply_to_message) {
             const repliedMessage = update.message.reply_to_message;
             const repliedText = repliedMessage.text || '';
 
-            // استخراج معرف العميل (ID) من النص الخاص بالرسالة الأصلية للأدمن
             const idMatch = repliedText.match(/معرف العميل \(ID\):\s*`(\d+)`/);
             const orderIdMatch = repliedText.match(/رقم الطلب:\s*`([A-Z0-9-]+)`/);
 
@@ -95,7 +94,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const targetUserChatId = idMatch[1];
                 const orderIdStr = orderIdMatch ? orderIdMatch[1] : 'غير معروف';
 
-                // إرسال رد الأدمن للعميل مع تنبيه برقم الطلب
                 await sendMessage(targetUserChatId, `💬 **رد من إدارة المتجر بخصوص طلبك (${orderIdStr}):**\n\n${text}`);
                 await sendMessage(ADMIN_CHAT_ID, `✅ تم إرسال الرد إلى العميل بنجاح.`);
             }
