@@ -21,7 +21,8 @@ async function sendMessage(chatId, text, replyMarkup = null) {
         if (replyMarkup) {
             payload.reply_markup = replyMarkup;
         }
-        await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
+        const response = await axios.post(`${TELEGRAM_API}/sendMessage`, payload);
+        return response.data.result.message_id; // نرجع رقم الرسالة لنستفيد منه في الحذف أو التعديل
     } catch (error) {
         console.error('خطأ في إرسال الرسالة:', error.response?.data || error.message);
     }
@@ -59,12 +60,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 lastOrder: null,
                 gameMode: null,
                 targetNum: null,
-                memoryAnswer: null,
-                isRegistered: false // مؤشر لتحديد هل هذه أول زيارة للبوت في حياته
+                isRegistered: false
             };
         }
 
-        // معالجة لعبة التوقعات السريعة
         if (users[chatId].gameMode === 'guessing') {
             const guessedNum = parseInt(text);
             if (isNaN(guessedNum) || guessedNum < 1 || guessedNum > 7) {
@@ -84,7 +83,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
 
         if (text === '/start') {
-            // إذا كان مسجلاً مسبقاً، لا نعرض عليه شرط الاشتراك مرة أخرى، نفتحه مباشرة!
             if (users[chatId].isRegistered) {
                 const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
                 const menuKeyboard = {
@@ -107,7 +105,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // إذا كانت أول مرة بحياته يدخل البوت
             const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
                 `⚠️ **ملاحظة هامة:** لكي تستخدم البوت، يرجى متابعة حساب التيك توك الخاص بنا لمرة واحدة فقط:\n` +
                 `🔗 https://www.tiktok.com/@e..e233\n\n` +
@@ -129,11 +126,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const userFirstName = update.callback_query.from.first_name || 'مستخدم';
 
         if (!users[chatId]) {
-            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastOrder: null, gameMode: null, targetNum: null, memoryAnswer: null, isRegistered: false };
+            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastOrder: null, gameMode: null, targetNum: null, isRegistered: false };
         }
 
         if (data === 'check_subscription') {
-            users[chatId].isRegistered = true; // تم التسجيل ولن يرى رسالة الاشتراك مجدداً
+            users[chatId].isRegistered = true;
 
             const welcomeText = `🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨\n\n` +
                 `🎁 تم التحقق بنجاح وفتح جميع خدمات البوت والألعاب لك! اختر ما يناسبك من القائمة أدناه:`;
@@ -202,24 +199,23 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             };
             await editMessageText(chatId, messageId, gamesText, gamesKeyboard);
         }
-        // --- لعبة تذكر الرمز الجديدة ---
+        // --- لعبة تذكر الرمز المعدلة (يختفي الرمز تماماً بعد ثانيتين) ---
         else if (data === 'play_memory') {
             const codes = ['73', '48', '91', '25', '64'];
             const correctCode = codes[Math.floor(Math.random() * codes.length)];
             
-            // خيارات عشوائية
             const wrongOptions = ['19', '82', '37', '56', '90'];
             let opt1 = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
             let opt2 = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
             while(opt1 === correctCode) opt1 = '12';
             while(opt2 === correctCode || opt2 === opt1) opt2 = '88';
 
-            // خلط الخيارات
             const options = [correctCode, opt1, opt2].sort(() => Math.random() - 0.5);
 
-            await sendMessage(chatId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي بعد ثانيتين... جهز تركيزك!)* ⏳`);
+            // نرسل رسالة الرمز المؤقتة
+            const tempMsgId = await sendMessage(chatId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي بعد ثانيتين... جهز تركيزك!)* ⏳`);
 
-            // محاكاة تأخير ثانيتين ثم إرسال الخيارات
+            // بعد ثانيتين يتم تعديل نفس الرسالة ليختفي الرمز وتظهر الخيارات مباشرة بدون أن يبقى ظاهرًا
             setTimeout(async () => {
                 const memKeyboard = {
                     inline_keyboard: [
@@ -231,8 +227,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         [{ text: '⬅️ إلغاء', callback_data: 'games_menu' }]
                     ]
                 };
-                await sendMessage(chatId, `🎯 **انتهى الوقت! اختر الرمز الصحيح الذي ظهر لك قبل قليل:**`, memKeyboard);
-            }, 2500);
+                await editMessageText(chatId, tempMsgId, `🎯 **انتهى الوقت! اختر الرمز الصحيح الذي ظهر لك قبل قليل:**`, memKeyboard);
+            }, 2000); // تحديد الوقت بدقة ثانيتين
         }
         else if (data.startsWith('mem_')) {
             const parts = data.split('_');
@@ -427,7 +423,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
             users[chatId].lastOrder = orderId;
 
-            // 🔔 إشعار فوري لك كأدمن بطلب العميل
             const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                 `👤 اسم العميل: ${userFirstName}\n` +
                 `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
