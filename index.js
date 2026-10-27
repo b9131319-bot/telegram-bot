@@ -8,6 +8,7 @@ app.use(bodyParser.json());
 const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
 const ADMIN_CHAT_ID = '8266396167'; // ⚠️ معرف الآدي الخاص بك كأدمن
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
+const BOT_USERNAME = 'abod_store_bot'; // ⚠️ ضع يوزر بوتك هنا بدقة (بدون علامة @)
 
 const users = {};    // بيانات المستخدمين
 const giftCodes = {}; // تخزين روابط/كوبونات النقاط النشطة
@@ -120,9 +121,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     try {
                         await sendMessage(uid, `📢 **رسالة من الإدارة:**\n\n${broadcastText}`);
                         successCount++;
-                    } catch (e) {
-                        // تجاهل المستخدمين الذين قاموا بحظر البوت
-                    }
+                    } catch (e) {}
                 }
 
                 await sendMessage(ADMIN_CHAT_ID, `✅ **تم إرسال الإذاعة بنجاح!**\nتمت الإرسال إلى *${successCount}* مستخدم.`);
@@ -137,7 +136,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const hoursDuration = parseInt(parts[1]) || 24;
 
                 if (isNaN(pointsAmount) || pointsAmount <= 0) {
-                    await sendMessage(chatId, `❌ **خطأ!** يرجى إرسال الصيغة الصحيحة:\n\`النقاط الساعات\`\nمثال: \`50 12\``);
+                    await sendMessage(chatId, `❌ **خطأ!** يرجى إرسال الصيغة الصحيحة:\n\`النقاط الساعات\`\nمثال: \`100 24\``);
                     return res.sendStatus(200);
                 }
 
@@ -150,13 +149,13 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     usedBy: []
                 };
 
-                const botUsername = "abod_store_bot"; 
-                const giftLink = `https://t.me/${botUsername}?start=${codeId}`;
+                const giftLink = `https://t.me/${BOT_USERNAME}?start=${codeId}`;
 
-                await sendMessage(chatId, `✅ **تم إنشاء رابط النقاط بنجاح!**\n\n🎁 النقاط: *${pointsAmount} نقطة*\n⏳ المدة: *${hoursDuration} ساعة*\n🔗 الرابط:\n\`${giftLink}\``);
+                await sendMessage(chatId, `✅ **تم إنشاء رابط النقاط الأزرق بنجاح!**\n\n🎁 النقاط: *${pointsAmount} نقطة*\n⏳ المدة: *${hoursDuration} ساعة*\n🔗 انسد الرابط التالي وانشره:\n${giftLink}`);
                 return res.sendStatus(200);
             }
 
+            // استقبال الدخول عبر رابط الهدية الأزرق
             if (text && text.startsWith('/start ')) {
                 const startPayload = text.split(' ')[1];
 
@@ -165,7 +164,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     const now = Date.now();
 
                     if (now > gift.expiresAt) {
-                        await sendMessage(chatId, `❌ **عذراً، انتهت صلاحية رابط الهدية هذا!**`);
+                        await sendMessage(chatId, `❌ **عذراً، انتهت صلاحية رابط الهدية هذا! لقد انتهى وقت استخدامه.**`);
                         return res.sendStatus(200);
                     }
 
@@ -174,10 +173,15 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         return res.sendStatus(200);
                     }
 
+                    // حساب الوقت المتبقي بالساعات لعرضه للمستخدم
+                    const remainingHours = Math.ceil((gift.expiresAt - now) / (1000 * 60 * 60));
+
                     gift.usedBy.push(chatId);
                     users[chatId].points += gift.points;
 
-                    await sendMessage(chatId, `🎉 **مبروك يا غالي!**\nتم استلام الهدية بنجاح وتم إضافة **${gift.points} نقطة** إلى رصيدك 🪙!\nرصيدك الحالي: *${users[chatId].points} نقطة*.`);
+                    await sendMessage(chatId, `🎉 **مبروك يا غالي! جاك هدية من الادمن 🤍**\n\n🎁 القيمة: **${gift.points} نقطة** 🪙\n⏳ ملاحظة: لقد استخدتم الرابط بنجاح وكان متبقي على انتهاء صلاحيته **${remainingHours} ساعة**. \n\nرصيدك الحالي: *${users[chatId].points} نقطة*.`, {
+                        inline_keyboard: [[{ text: '⬅️ فتح القائمة الرئيسية', callback_data: 'main_menu' }]]
+                    });
                     return res.sendStatus(200);
                 }
             }
@@ -341,13 +345,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // لوحة تحكم الأدمن والخيارات بجانب بعضها
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_panel') {
                 const adminKeyboard = {
                     inline_keyboard: [
                         [
                             { text: '📊 عرض المستخدمين', callback_data: 'admin_users_list' },
-                            { text: '🎁 رابط نقاط', callback_data: 'admin_create_gift' }
+                            { text: '🎁 رابط نقاط أزرق', callback_data: 'admin_create_gift' }
                         ],
                         [
                             { text: '📢 إذاعة للجميع', callback_data: 'admin_broadcast' }
@@ -369,7 +372,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_create_gift') {
                 users[chatId].waitingForGiftCreation = true;
-                await sendMessage(chatId, `🎁 **إنشاء رابط نقاط جديد:**\n\nأرسل الآن في الشات عدد النقاط والمدة بالساعات بهذا الشكل:\n\`النقاط الساعات\`\n\n*مثال:* \`100 24\``);
+                await sendMessage(chatId, `🎁 **إنشاء رابط نقاط أزرق جديد:**\n\nأرسل الآن في الشات عدد النقاط والمدة بالساعات بهذا الشكل:\n\`النقاط الساعات\`\n\n*مثال:* \`100 24\``);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
