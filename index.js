@@ -162,7 +162,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
                 await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
 
-                // إشعار الأدمن مع اسم العميل، المعرف، واسم المستخدم
+                // إشعار الأدمن مع أزرار التحكم بالحالة (تم الإتمام أو لم يتم)
                 const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                     `👤 اسم العميل: [${userName}](tg://user?id=${chatId})\n` +
                     `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
@@ -172,7 +172,16 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     `📌 رقم الطلب: \`${orderId}\`\n` +
                     `🪙 التكلفة: ${cost} نقطة`;
                 
-                await sendMessage(ADMIN_CHAT_ID, adminMsg);
+                const adminKeyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: '✅ تم إتمام طلبك بنجاح', callback_data: `admin_done_${chatId}_${orderId}` },
+                            { text: '❌ لم يتم اكتمال طلبك', callback_data: `admin_fail_${chatId}_${orderId}` }
+                        ]
+                    ]
+                };
+
+                await sendMessage(ADMIN_CHAT_ID, adminMsg, adminKeyboard);
 
                 await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📦 الخدمة: ${niceServiceName}\n🔗 الرابط المرسل: \`${targetInput}\`\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`, {
                     inline_keyboard: [[{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]]
@@ -223,6 +232,34 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const chatId = callbackQuery.message.chat.id;
         const messageId = callbackQuery.message.message_id;
         const data = callbackQuery.data;
+
+        // --- التحكم بطلبات الأدمن (تم الإتمام / لم يتم) ---
+        if (chatId.toString() === ADMIN_CHAT_ID.toString() && (data.startsWith('admin_done_') || data.startsWith('admin_fail_'))) {
+            const parts = data.split('_');
+            const action = parts[1]; // done or fail
+            const targetUserChatId = parts[2];
+            const orderIdStr = parts[3];
+
+            if (action === 'done') {
+                await sendMessage(targetUserChatId, `🎉 **تم إتمام طلبك بنجاح!**\n\n📌 رقم الطلب: \`${orderIdStr}\`\nشكراً لاستخدامك متجرنا 🤍✨`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                    callback_query_id: callbackQuery.id,
+                    text: '✅ تم إرسال إشعار اكتمال الطلب للعميل بنجاح!',
+                    show_alert: false
+                });
+                // تحديث رسالة الأدمن لحذف الأزرار أو تعديلها
+                await editMessageText(chatId, messageId, callbackQuery.message.text + `\n\n🟢 **حالة الطلب:** تم الإتمام بنجاح ✅`);
+            } else if (action === 'fail') {
+                await sendMessage(targetUserChatId, `❌ **عذراً، لم يتم اكتمال طلبك.**\n\n📌 رقم الطلب: \`${orderIdStr}\`\nيرجى التواصل مع الدعم الفني لمعرفة السبب: @abod097644`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                    callback_query_id: callbackQuery.id,
+                    text: '❌ تم إرسال إشعار عدم اكتمال الطلب للعميل!',
+                    show_alert: false
+                });
+                await editMessageText(chatId, messageId, callbackQuery.message.text + `\n\n🔴 **حالة الطلب:** لم يتم الإتمام ❌`);
+            }
+            return res.sendStatus(200);
+        }
 
         if (!users[chatId]) {
             users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastMemory: 0, lastBoxes: 0, lastShapes: 0, lastOrder: null, isRegistered: false, waitingForInput: null };
