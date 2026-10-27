@@ -87,7 +87,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const repliedMessage = update.message.reply_to_message;
             const repliedText = repliedMessage.text || '';
 
-            const idMatch = repliedText.match(/tg:\/\/user\?id=(\d+)/);
+            const idMatch = repliedText.match(/معرف العميل \(ID\):\s*`(\d+)`/) || repliedText.match(/(\d+)\s*:\s*\(ID\)/);
             const orderIdMatch = repliedText.match(/رقم الطلب:\s*`([A-Z0-9-]+)`/);
 
             if (idMatch && idMatch[1]) {
@@ -161,9 +161,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
                 await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
 
-                // إشعار الأدمن مع اسم العميل كرابط مباشر
+                // إشعار الأدمن مع اسم العميل كرابط مباشر + عرض الآيدي النصي الواضح
                 const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                     `👤 اسم العميل: [${userName}](tg://user?id=${chatId})\n` +
+                    `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
                     `📦 نوع الطلب: ${niceServiceName}\n` +
                     `🔗 الرابط / اسم المستخدم: \`${targetInput}\`\n` +
                     `📌 رقم الطلب: \`${orderId}\`\n` +
