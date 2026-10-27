@@ -61,8 +61,75 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 lastBoxes: 0,
                 lastShapes: 0,
                 lastOrder: null,
-                isRegistered: false
+                isRegistered: false,
+                waitingForInput: null // لحفظ الخدمة التي ينتظر العميل إدخال رابطه لها
             };
+        }
+
+        // إذا كان البوت ينتظر من المستخدم إدخال رابط المقطع أو اسم المستخدم للخدمة المطلوبة
+        if (users[chatId].waitingForInput) {
+            const pendingService = users[chatId].waitingForInput;
+            
+            // التحقق البسيط من صحة الرابط أو اسم المستخدم
+            if (text.length < 3 || (!text.includes('http') && !text.includes('@') && !text.includes('www.'))) {
+                await sendMessage(chatId, `❌ **الرابط أو اسم المستخدم غير صحيح!**\nيرجى إرسال رابط صحيح (يبدأ بـ http أو www) أو اسم مستخدم صحيح يحتوي على (@):`);
+                return res.sendStatus(200);
+            }
+
+            const targetInput = text;
+            users[chatId].waitingForInput = null; // إعادة تعيين الحالة
+
+            // معالجة التكلفة وخصم النقاط إن وجدت
+            let cost = 0;
+            const data = pendingService;
+
+            if (data.startsWith('pay_')) {
+                cost = 90;
+                if (data.includes('_f2')) cost = 180;
+                if (data.includes('_f3')) cost = 320;
+                if (data.includes('_v2')) cost = 300;
+                if (data.includes('_f1')) cost = 90;
+                if (data.includes('yt_f1')) cost = 110;
+                if (data.includes('yt_f2')) cost = 220;
+                if (data.includes('yt_f3')) cost = 400;
+                if (data.includes('yt_v1')) cost = 90;
+                if (data.includes('yt_v2')) cost = 350;
+                if (data.includes('in_f1')) cost = 100;
+                if (data.includes('in_f2')) cost = 200;
+                if (data.includes('in_f3')) cost = 360;
+                if (data.includes('in_v1')) cost = 85;
+                if (data.includes('in_v2')) cost = 320;
+
+                if (users[chatId].points < cost) {
+                    await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.`);
+                    return res.sendStatus(200);
+                }
+                users[chatId].points -= cost;
+            }
+
+            users[chatId].ordersCount += 1;
+            const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
+            users[chatId].lastOrder = orderId;
+
+            // إرسال علامة صح أولاً لتأكيد استلام الرابط
+            await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
+
+            // 🔔 إشعار فوري لك كأدمن بطلب العميل مع الرابط
+            const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
+                `👤 اسم العميل: ${userName}\n` +
+                `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
+                `📦 نوع الطلب: ${data}\n` +
+                `🔗 الرابط / اسم المستخدم: \`${targetInput}\`\n` +
+                `📌 رقم الطلب: \`${orderId}\`\n` +
+                `🪙 التكلفة: ${cost} نقطة`;
+            
+            await sendMessage(ADMIN_CHAT_ID, adminMsg);
+
+            // إرسال الرسالة الثانية للعميل لتأكيد الطلب
+            await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n🔗 الرابط المرسل: \`${targetInput}\`\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`, {
+                inline_keyboard: [[{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]]
+            });
+            return res.sendStatus(200);
         }
 
         if (text === '/start') {
@@ -107,10 +174,9 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const chatId = callbackQuery.message.chat.id;
         const messageId = callbackQuery.message.message_id;
         const data = callbackQuery.data;
-        const userFirstName = callbackQuery.from.first_name || 'مستخدم';
 
         if (!users[chatId]) {
-            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastMemory: 0, lastBoxes: 0, lastShapes: 0, lastOrder: null, isRegistered: false };
+            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastMemory: 0, lastBoxes: 0, lastShapes: 0, lastOrder: null, isRegistered: false, waitingForInput: null };
         }
 
         if (data === 'check_subscription') {
@@ -152,6 +218,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const oneDay = 24 * 60 * 60 * 1000;
 
         if (data === 'main_menu') {
+            users[chatId].waitingForInput = null;
             const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
             const menuKeyboard = {
                 inline_keyboard: [
@@ -187,6 +254,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
         }
         else if (data === 'games_menu') {
+            users[chatId].waitingForInput = null;
             const gamesText = `🎮 **قسم الألعاب والتحديات:**\nكل لعبة متاحة (مرة واحدة كل 24 ساعة):`;
             const gamesKeyboard = {
                 inline_keyboard: [
@@ -199,7 +267,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             };
             await editMessageText(chatId, messageId, gamesText, gamesKeyboard);
         }
-        // --- لعبة تذكر الرمز (محاولة كل 24 ساعة وبدون زر العب مجدداً) ---
+        // --- الألعاب ---
         else if (data === 'play_memory') {
             if (now - users[chatId].lastMemory < oneDay) {
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
@@ -221,7 +289,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             const options = [correctCode, opt1, opt2].sort(() => Math.random() - 0.5);
 
-            await editMessageText(chatId, messageId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي بعد ثانيتين... جهز تركيزك!)* ⏳`);
+            await editMessageText(chatId, messageId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي سريعاً... جهز تركيزك!)* ⏳`);
 
             setTimeout(async () => {
                 const memKeyboard = {
@@ -235,10 +303,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     ]
                 };
                 await editMessageText(chatId, messageId, `🎯 **انتهى الوقت! اختر الرمز الصحيح الذي ظهر لك قبل قليل:**`, memKeyboard);
-            }, 2500);
+            }, 1500);
         }
         else if (data.startsWith('mem_')) {
-            users[chatId].lastMemory = now; // تسسجيل وقت الاستخدام (محاولة واحدة)
+            users[chatId].lastMemory = now;
             const parts = data.split('_');
             const chosen = parts[1];
             const correct = parts[2];
@@ -258,7 +326,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 });
             }
         }
-        // --- لعبة الصناديق (محاولة كل 24 ساعة وبدون زر العب مجدداً) ---
         else if (data === 'play_boxes') {
             if (now - users[chatId].lastBoxes < oneDay) {
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
@@ -282,7 +349,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             await editMessageText(chatId, messageId, `📦 **لعبة الصناديق العشوائية!**\nأمامك 3 صناديق: صندوقين تحتويان على نقاط (بحد أقصى 50 نقطة) وصندوق فارغ.\nاختر صندوقاً بحذر:`, boxKeyboard);
         }
         else if (data.startsWith('box_')) {
-            users[chatId].lastBoxes = now; // تسجيل وقت الاستخدام
+            users[chatId].lastBoxes = now;
             const chosenBox = parseInt(data.split('_')[1]);
             const emptyBox = Math.floor(Math.random() * 3);
 
@@ -302,7 +369,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 });
             }
         }
-        // --- لعبة الأشكال المختلفة (محاولة كل 24 ساعة وبدون زر العب مجدداً) ---
         else if (data === 'play_shapes') {
             if (now - users[chatId].lastShapes < oneDay) {
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
@@ -313,15 +379,31 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            const allSets = [
+                ['🍎', '🍊', '🍋', '🍌', '🍉'],
+                ['🐶', '🐱', '🐭', '🐹', '🐰'],
+                ['⚽', '🏀', '🏈', '⚾', '🎾'],
+                ['🚗', '🚕', '🚙', '🚌', '🚎'],
+                ['⌚', '📱', '💻', '⌨️', '📷'],
+                ['❤️', '💙', '💚', '💛', '💜'],
+                ['🚀', '🛸', '🛰️', '🪐', '⭐'],
+                ['⚡', '🔥', '💧', '❄️', '🌪️']
+            ];
+
+            const randomSet = allSets[Math.floor(Math.random() * allSets.length)];
+            const baseShape = randomSet[Math.floor(Math.random() * randomSet.length)];
+            
+            let differentShape = randomSet[Math.floor(Math.random() * randomSet.length)];
+            while(differentShape === baseShape) {
+                differentShape = randomSet[Math.floor(Math.random() * randomSet.length)];
+            }
+
             const correctIndex = Math.floor(Math.random() * 4);
             users[chatId].currentShapeCorrect = correctIndex;
 
-            const shapesList = ['⭐', '🟢', '🟥', '🔷'];
-            const differentList = ['🌟', '🔵', '🟧', '🔶'];
-
             let row = [];
             for (let i = 0; i < 4; i++) {
-                let displayChar = (i === correctIndex) ? differentList[i] : shapesList[i];
+                let displayChar = (i === correctIndex) ? differentShape : baseShape;
                 row.push({ text: displayChar, callback_data: `shape_${i}` });
             }
 
@@ -331,10 +413,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     [{ text: '⬅️ إلغاء', callback_data: 'games_menu' }]
                 ]
             };
-            await editMessageText(chatId, messageId, `⏱️ **لعبة الأشكال المختلفة!**\nأمامك 4 أشكال، اختر الشكل **المختلف** بسرعة خلال **3 ثوانٍ**!`, shapeKeyboard);
+            await editMessageText(chatId, messageId, `⏱️ **لعبة الأشكال المختلفة العشوائية!**\nأمامك 4 أشكال، اختر الشكل **المختلف** بسرعة خلال **3 ثوانٍ**!`, shapeKeyboard);
         }
         else if (data.startsWith('shape_')) {
-            users[chatId].lastShapes = now; // تسجيل وقت الاستخدام
+            users[chatId].lastShapes = now;
             const choice = parseInt(data.split('_')[1]);
             const correctIndex = users[chatId].currentShapeCorrect !== undefined ? users[chatId].currentShapeCorrect : 0;
 
@@ -370,6 +452,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
         }
         else if (data === 'services_menu') {
+            users[chatId].waitingForInput = null;
             const servText = `📦 **قسم المتجر وخدمات الدعم:**\nاختر المنصة المطلوبة:`;
             const servKeyboard = {
                 inline_keyboard: [
@@ -487,12 +570,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             await editMessageText(chatId, messageId, `👁️ **باقات مشاهدات انستقرام:**\nرصيدك: ${users[chatId].points} نقطة`, kb);
         }
 
-        // --- معالجة الطلبات وإرسال إشعار لك كأدمن ---
+        // --- عند اختيار أي خدمة (مجانية أو مدفوعة): نطلب منه إرسال الرابط أولاً ---
         else if (data.startsWith('free_') || data.startsWith('pay_')) {
-            let cost = 0;
-
+            // التحقق المبدئي للرصيد إذا كانت الخدمة مدفوعة قبل طلب الرابط
             if (data.startsWith('pay_')) {
-                cost = 90;
+                let cost = 90;
                 if (data.includes('_f2')) cost = 180;
                 if (data.includes('_f3')) cost = 320;
                 if (data.includes('_v2')) cost = 300;
@@ -516,24 +598,15 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     });
                     return res.sendStatus(200);
                 }
-                users[chatId].points -= cost;
             }
 
-            users[chatId].ordersCount += 1;
-            const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
-            users[chatId].lastOrder = orderId;
+            // تعيين حالة الانتظار لهذا المستخدم ليقوم بإرسال الرابط أو اسم المستخدم
+            users[chatId].waitingForInput = data;
 
-            const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
-                `👤 اسم العميل: ${userFirstName}\n` +
-                `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
-                `📦 نوع الطلب: ${data}\n` +
-                `📌 رقم الطلب: \`${orderId}\`\n` +
-                `🪙 التكلفة: ${cost} نقطة`;
-            
-            await sendMessage(ADMIN_CHAT_ID, adminMsg);
-
-            await editMessageText(chatId, messageId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`, {
-                inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+            await editMessageText(chatId, messageId, `🔗 **أرسل الآن في الشات رابط المقطع أو اسم المستخدم المطلوب للخدمة:**\n*(مثال: رابط الفيديو أو حسابك مثل @username)*`, {
+                inline_keyboard: [
+                    [{ text: '⬅️ إلغاء والعودة للمتجر', callback_data: 'services_menu' }]
+                ]
             });
         }
         else if (data === 'my_account') {
