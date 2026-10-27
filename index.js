@@ -6,7 +6,7 @@ const app = express();
 app.use(bodyParser.json());
 
 const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
-const ADMIN_CHAT_ID = '8266396167'; // ⚠️ ضع الآدي (ID) الخاص بك هنا لتصلك طلبات العملاء
+const ADMIN_CHAT_ID = '8266396167'; // ⚠️ معرف الآدي الخاص بك لاستلام طلبات العملاء
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 
 const users = {};
@@ -56,14 +56,15 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 ordersCount: 0,
                 lastDaily: 0,
                 lastWheel: 0,
-                lastSocialTask: 0,
                 lastOrder: null,
                 gameMode: null,
                 targetNum: null,
-                isSubscribed: false
+                memoryAnswer: null,
+                isRegistered: false // مؤشر لتحديد هل هذه أول زيارة للبوت في حياته
             };
         }
 
+        // معالجة لعبة التوقعات السريعة
         if (users[chatId].gameMode === 'guessing') {
             const guessedNum = parseInt(text);
             if (isNaN(guessedNum) || guessedNum < 1 || guessedNum > 7) {
@@ -83,11 +84,34 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
 
         if (text === '/start') {
-            users[chatId].isSubscribed = false;
+            // إذا كان مسجلاً مسبقاً، لا نعرض عليه شرط الاشتراك مرة أخرى، نفتحه مباشرة!
+            if (users[chatId].isRegistered) {
+                const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
+                const menuKeyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
+                            { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
+                        ],
+                        [
+                            { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' },
+                            { text: '👤 حسابي ونقاطي', callback_data: 'my_account' }
+                        ],
+                        [
+                            { text: '📦 تتبع آخر طلب', callback_data: 'track_order' },
+                            { text: '🛠️ الدعم الفني', callback_data: 'support' }
+                        ]
+                    ]
+                };
+                await sendMessage(chatId, menuText, menuKeyboard);
+                return res.sendStatus(200);
+            }
 
+            // إذا كانت أول مرة بحياته يدخل البوت
             const subText = `🌹 أهلاً بك يا *${userName}* في بوت الخدمات المتكامل 🤍\n\n` +
-                `⚠️ **تنبيه هام:** للأسف خوارزميات تليجرام لا تكتشف المتابعة التلقائية، لذلك يرجى الضغط على زر الرابط أدناه ومتابعة الحساب يدوياً، ثم اضغط **"تأكيد المتابعة ودخول البوت ✅"**:\n` +
-                `🔗 https://www.tiktok.com/@e..e233`;
+                `⚠️ **ملاحظة هامة:** لكي تستخدم البوت، يرجى متابعة حساب التيك توك الخاص بنا لمرة واحدة فقط:\n` +
+                `🔗 https://www.tiktok.com/@e..e233\n\n` +
+                `🌸 بعد المتابعة، اضغط على زر **"تأكيد المتابعة ودخول البوت ✅"** بالأسفل ولن تظهر لك هذه الرسالة مرة أخرى! ✨`;
 
             const subKeyboard = {
                 inline_keyboard: [
@@ -105,11 +129,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const userFirstName = update.callback_query.from.first_name || 'مستخدم';
 
         if (!users[chatId]) {
-            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastSocialTask: 0, lastOrder: null, gameMode: null, targetNum: null, isSubscribed: false };
+            users[chatId] = { points: 20, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastOrder: null, gameMode: null, targetNum: null, memoryAnswer: null, isRegistered: false };
         }
 
         if (data === 'check_subscription') {
-            users[chatId].isSubscribed = true;
+            users[chatId].isRegistered = true; // تم التسجيل ولن يرى رسالة الاشتراك مجدداً
 
             const welcomeText = `🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨\n\n` +
                 `🎁 تم التحقق بنجاح وفتح جميع خدمات البوت والألعاب لك! اختر ما يناسبك من القائمة أدناه:`;
@@ -121,24 +145,16 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
                     ],
                     [
-                        { text: '📌 نقاط متابعة الحسابات (15+)', callback_data: 'social_tasks_menu' },
-                        { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' }
+                        { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' },
+                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' }
                     ],
                     [
-                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' },
-                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' }
-                    ],
-                    [
+                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' },
                         { text: '🛠️ الدعم الفني', callback_data: 'support' }
                     ]
                 ]
             };
             await editMessageText(chatId, messageId, welcomeText, mainKeyboard);
-            return res.sendStatus(200);
-        }
-
-        if (!users[chatId].isSubscribed) {
-            await sendMessage(chatId, `⚠️ عذراً يا غالي! يجب عليك متابعة حساب التيك توك أولاً والضغط على زر التأكيد لكي يعمل معك البوت.\n🔗 https://www.tiktok.com/@e..e233`);
             return res.sendStatus(200);
         }
 
@@ -151,45 +167,16 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
                     ],
                     [
-                        { text: '📌 نقاط متابعة الحسابات (15+)', callback_data: 'social_tasks_menu' },
-                        { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' }
+                        { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' },
+                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' }
                     ],
                     [
-                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' },
-                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' }
-                    ],
-                    [
+                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' },
                         { text: '🛠️ الدعم الفني', callback_data: 'support' }
                     ]
                 ]
             };
             await editMessageText(chatId, messageId, menuText, menuKeyboard);
-        }
-        else if (data === 'social_tasks_menu') {
-            const taskText = `📌 **قسم نقاط متابعة الحسابات:**\n\n` +
-                `قم بمتابعة الحساب التالي لتربح **15 نقطة** 🪙:\n` +
-                `🔗 https://www.tiktok.com/@a8000396?_r=1&_t=ZS-9At4ZfeZ0bK\n\n` +
-                `بعد إتمام المتابعة، اضغط على زر التأكيد أدناه لاستلام نقاطك! ✨`;
-            
-            const taskKb = {
-                inline_keyboard: [
-                    [{ text: '🔗 رابط الحساب المطلوب', url: 'https://www.tiktok.com/@a8000396?_r=1&_t=ZS-9At4ZfeZ0bK' }],
-                    [{ text: '✅ تأكيد المتابعة وأضف 15 نقطة', callback_data: 'claim_social_task' }],
-                    [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
-                ]
-            };
-            await editMessageText(chatId, messageId, taskText, taskKb);
-        }
-        else if (data === 'claim_social_task') {
-            const now = Date.now();
-            const oneDay = 24 * 60 * 60 * 1000;
-            if (now - users[chatId].lastSocialTask < oneDay) {
-                await sendMessage(chatId, `⏳ لقد قمت بإنجاز هذه المهمة مسبقاً! انتظر 24 ساعة لتتجدد المهام.`);
-            } else {
-                users[chatId].lastSocialTask = now;
-                users[chatId].points += 15;
-                await sendMessage(chatId, `🎉 مبروك يا وحش! تم تأكيد المتابعة وإضافة *15 نقطة* لرصيدك 🪙.\nرصيدك الحالي: ${users[chatId].points} نقطة.`);
-            }
         }
         else if (data === 'daily_gift') {
             const now = Date.now();
@@ -206,6 +193,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const gamesText = `🎮 **قسم الألعاب والتحديات:**\nاجمع النقاط لطلب خدمات المتجر!`;
             const gamesKeyboard = {
                 inline_keyboard: [
+                    [{ text: '🧠 لعبة تذكر الرمز (اربح 25 نقطة)', callback_data: 'play_memory' }],
                     [{ text: '❌ ⭕ لعبة اكس أو (تحدي الذكاء)', callback_data: 'play_xo' }],
                     [{ text: '🔮 لعبة التوقعات (اختر رقم 1 إلى 7)', callback_data: 'play_guess' }],
                     [{ text: '🎡 عجلة الحظ (مرة كل 24 ساعة)', callback_data: 'lucky_wheel' }],
@@ -213,6 +201,50 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 ]
             };
             await editMessageText(chatId, messageId, gamesText, gamesKeyboard);
+        }
+        // --- لعبة تذكر الرمز الجديدة ---
+        else if (data === 'play_memory') {
+            const codes = ['73', '48', '91', '25', '64'];
+            const correctCode = codes[Math.floor(Math.random() * codes.length)];
+            
+            // خيارات عشوائية
+            const wrongOptions = ['19', '82', '37', '56', '90'];
+            let opt1 = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
+            let opt2 = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
+            while(opt1 === correctCode) opt1 = '12';
+            while(opt2 === correctCode || opt2 === opt1) opt2 = '88';
+
+            // خلط الخيارات
+            const options = [correctCode, opt1, opt2].sort(() => Math.random() - 0.5);
+
+            await sendMessage(chatId, `🧠 **تذكر الرمز السريع!**\n\nالرمز هو: \` ${correctCode} \`\n*(سيختفي بعد ثانيتين... جهز تركيزك!)* ⏳`);
+
+            // محاكاة تأخير ثانيتين ثم إرسال الخيارات
+            setTimeout(async () => {
+                const memKeyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: options[0], callback_data: `mem_${options[0]}_${correctCode}` },
+                            { text: options[1], callback_data: `mem_${options[1]}_${correctCode}` },
+                            { text: options[2], callback_data: `mem_${options[2]}_${correctCode}` }
+                        ],
+                        [{ text: '⬅️ إلغاء', callback_data: 'games_menu' }]
+                    ]
+                };
+                await sendMessage(chatId, `🎯 **انتهى الوقت! اختر الرمز الصحيح الذي ظهر لك قبل قليل:**`, memKeyboard);
+            }, 2500);
+        }
+        else if (data.startsWith('mem_')) {
+            const parts = data.split('_');
+            const chosen = parts[1];
+            const correct = parts[2];
+
+            if (chosen === correct) {
+                users[chatId].points += 25;
+                await editMessageText(chatId, messageId, `🎉 **كفووو يا بطل!**\nاخترت الرمز الصحيح (\`${correct}\`) بدقة تامة!\n+25 نقطة أضيفت لرصيدك 🪙 (رصيدك الحالي: ${users[chatId].points})`);
+            } else {
+                await editMessageText(chatId, messageId, `❌ **هاردلك!**\nاخترت (${chosen}) بينما الرمز الصحيح كان (\`${correct}\`). حاول مرة أخرى!`);
+            }
         }
         else if (data === 'play_xo') {
             const outcomes = ['win', 'lose', 'draw'];
@@ -365,7 +397,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
         // --- معالجة الطلبات وإرسال إشعار لك كأدمن ---
         else if (data.startsWith('free_') || data.startsWith('pay_')) {
-            let serviceName = data;
             let cost = 0;
 
             if (data.startsWith('pay_')) {
@@ -396,7 +427,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const orderId = (data.startsWith('free_') ? 'FREE-' : 'ORD-') + Math.floor(100000 + Math.random() * 900000);
             users[chatId].lastOrder = orderId;
 
-            // 🔔 إرسال إشعار فوراً إلى صاحب البوت (أنت) بطلب العميل الجديد
+            // 🔔 إشعار فوري لك كأدمن بطلب العميل
             const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                 `👤 اسم العميل: ${userFirstName}\n` +
                 `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
@@ -406,7 +437,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             
             await sendMessage(ADMIN_CHAT_ID, adminMsg);
 
-            // الرد على العميل
             await sendMessage(chatId, `✅ **تم قبول طلبك بنجاح يا غالي!**\n\n📌 رقم طلبك للتتبع: \`${orderId}\`\n${cost > 0 ? `تم خصم *${cost} نقطة* من رصيدك.\nرصيدك المتبقي: *${users[chatId].points} نقطة* 🪙\n` : ''}جاري التنفيذ... 🚀\n🤍`);
         }
         else if (data === 'my_account') {
