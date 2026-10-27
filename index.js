@@ -69,7 +69,11 @@ function getServiceNiceName(data) {
         'pay_in_f2': 'متابعين انستقرام (50 إلى 100 متابع)',
         'pay_in_f3': 'متابعين انستقرام (100 إلى 200 متابع)',
         'pay_in_v1': 'مشاهدات انستقرام (100 إلى 1000 مشاهدة)',
-        'pay_in_v2': 'مشاهدات انستقرام (1000 إلى 10000 مشاهدة)'
+        'pay_in_v2': 'مشاهدات انستقرام (1000 إلى 10000 مشاهدة)',
+        'pay_tw_f1': 'متابعين تويتش (10 إلى 50 متابع)',
+        'pay_tw_f2': 'متابعين تويتش (50 إلى 100 متابع)',
+        'pay_tw_v1': 'مشاهدات بث تويتش (100 إلى 500 مشاهدة)',
+        'pay_store_create': 'خدمة إنشاء متجر متكامل'
     };
     return names[data] || data;
 }
@@ -147,6 +151,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     if (data.includes('in_f3')) cost = 360;
                     if (data.includes('in_v1')) cost = 85;
                     if (data.includes('in_v2')) cost = 320;
+                    if (data.includes('tw_f1')) cost = 95;
+                    if (data.includes('tw_f2')) cost = 190;
+                    if (data.includes('tw_v1')) cost = 120;
+                    if (data === 'pay_store_create') cost = 1000;
 
                     if (users[chatId].points < cost) {
                         await sendMessage(chatId, `❌ **عذراً، رصيدك غير كافٍ!**\nلديك *${users[chatId].points} نقطة* فقط وتحتاج إلى *${cost} نقطة*.`);
@@ -162,7 +170,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
                 await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
 
-                // إشعار الأدمن مع أزرار التحكم بالحالة (تم الإتمام أو لم يتم)
+                // إشعار الأدمن مع الأزرار التفاعلية
                 const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                     `👤 اسم العميل: [${userName}](tg://user?id=${chatId})\n` +
                     `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
@@ -233,10 +241,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         const messageId = callbackQuery.message.message_id;
         const data = callbackQuery.data;
 
-        // --- التحكم بطلبات الأدمن (تم الإتمام / لم يتم) ---
+        // --- التحكم بطلبات الأدمن ---
         if (chatId.toString() === ADMIN_CHAT_ID.toString() && (data.startsWith('admin_done_') || data.startsWith('admin_fail_'))) {
             const parts = data.split('_');
-            const action = parts[1]; // done or fail
+            const action = parts[1];
             const targetUserChatId = parts[2];
             const orderIdStr = parts[3];
 
@@ -247,7 +255,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     text: '✅ تم إرسال إشعار اكتمال الطلب للعميل بنجاح!',
                     show_alert: false
                 });
-                // تحديث رسالة الأدمن لحذف الأزرار أو تعديلها
                 await editMessageText(chatId, messageId, callbackQuery.message.text + `\n\n🟢 **حالة الطلب:** تم الإتمام بنجاح ✅`);
             } else if (action === 'fail') {
                 await sendMessage(targetUserChatId, `❌ **عذراً، لم يتم اكتمال طلبك.**\n\n📌 رقم الطلب: \`${orderIdStr}\`\nيرجى التواصل مع الدعم الفني لمعرفة السبب: @abod097644`);
@@ -538,12 +545,14 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
         }
         else if (data === 'services_menu') {
             users[chatId].waitingForInput = null;
-            const servText = `📦 **قسم المتجر وخدمات الدعم:**\nاختر المنصة المطلوبة:`;
+            const servText = `📦 **قسم المتجر وخدمات الدعم:**\nاختر المنصة أو الخدمة المطلوبة:`;
             const servKeyboard = {
                 inline_keyboard: [
                     [{ text: '🎵 خدمات تيك توك', callback_data: 'platform_tiktok' }],
                     [{ text: '📺 خدمات يوتيوب', callback_data: 'platform_youtube' }],
                     [{ text: '📸 خدمات انستقرام', callback_data: 'platform_insta' }],
+                    [{ text: '💜 خدمات تويتش (Twitch)', callback_data: 'platform_twitch' }],
+                    [{ text: '🛒 إنشاء متجر متكامل (1000 نقطة)', callback_data: 'pay_store_create' }],
                     [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
                 ]
             };
@@ -655,6 +664,19 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             await editMessageText(chatId, messageId, `👁️ **باقات مشاهدات انستقرام:**\nرصيدك: ${users[chatId].points} نقطة`, kb);
         }
 
+        // --- تويتش (Twitch) ---
+        else if (data === 'platform_twitch') {
+            const kb = {
+                inline_keyboard: [
+                    [{ text: '👤 متابعين تويتش (10 إلى 50) - 95 نقطة', callback_data: 'pay_tw_f1' }],
+                    [{ text: '👤 متابعين تويتش (50 إلى 100) - 190 نقطة', callback_data: 'pay_tw_f2' }],
+                    [{ text: '👁️ مشاهدات بث تويتش (100 إلى 500) - 120 نقطة', callback_data: 'pay_tw_v1' }],
+                    [{ text: '⬅️ رجوع للمتجر', callback_data: 'services_menu' }]
+                ]
+            };
+            await editMessageText(chatId, messageId, `💜 **قسم تويتش (Twitch):**\nاختر الباقة المطلوبة:`, kb);
+        }
+
         else if (data.startsWith('free_') || data.startsWith('pay_')) {
             if (data.startsWith('pay_')) {
                 let cost = 90;
@@ -672,6 +694,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 if (data.includes('in_f3')) cost = 360;
                 if (data.includes('in_v1')) cost = 85;
                 if (data.includes('in_v2')) cost = 320;
+                if (data.includes('tw_f1')) cost = 95;
+                if (data.includes('tw_f2')) cost = 190;
+                if (data.includes('tw_v1')) cost = 120;
+                if (data === 'pay_store_create') cost = 1000;
 
                 if (users[chatId].points < cost) {
                     await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
@@ -685,7 +711,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             users[chatId].waitingForInput = data;
 
-            await editMessageText(chatId, messageId, `🔗 **أرسل الآن في الشات رابط المقطع أو اسم المستخدم المطلوب للخدمة:**\n*(مثال: رابط الفيديو أو حسابك مثل @username)*`, {
+            await editMessageText(chatId, messageId, `🔗 **أرسل الآن في الشات رابط القناة/المتجر أو اسم المستخدم المطلوب:**\n*(مثال: رابط حسابك أو رابط البث أو منصتك مثل @username)*`, {
                 inline_keyboard: [
                     [{ text: '⬅️ إلغاء والعودة للمتجر', callback_data: 'services_menu' }]
                 ]
