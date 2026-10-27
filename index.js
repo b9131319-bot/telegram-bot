@@ -88,12 +88,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const userName = update.message.from.first_name || 'مستخدم';
             const userUsername = update.message.from.username ? `@${update.message.from.username}` : 'لا يوجد';
 
-            // تسجيل المستخدم فور دخوله البوت (حتى لو لم يطلب شيئاً)
             if (!users[chatId]) {
                 users[chatId] = {
                     name: userName,
                     username: userUsername,
-                    points: 0, // يبدأ بـ 0 نقطة
+                    points: 0,
                     ordersCount: 0,
                     lastDaily: 0,
                     lastWheel: 0,
@@ -104,12 +103,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     waitingForInput: null
                 };
             } else {
-                // تحديث الاسم والمعرف احتياطياً
                 users[chatId].name = userName;
                 users[chatId].username = userUsername;
             }
 
-            // --- لوحة التحكم الخاصة بالأدمن (إرسال /admin أو الضغط على زر) ---
+            // لوحة تحكم الأدمن بأمر /admin
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && text === '/admin') {
                 const allUserIds = Object.keys(users);
                 let adminPanelText = `🛠️ **لوحة تحكم الأدمن - قائمة المستخدمين (${allUserIds.length}):**\n\n`;
@@ -127,7 +125,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // --- تفعيل الرد (Reply) من الأدمن للعميل ---
+            // تفعيل الرد (Reply) من الأدمن للعميل
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && update.message.reply_to_message) {
                 const repliedMessage = update.message.reply_to_message;
                 const repliedText = repliedMessage.text || '';
@@ -195,7 +193,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
                     await sendMessage(chatId, `✔️ **تم التحقق من الرابط / اسم المستخدم بنجاح!**`);
 
-                    // إشعار الأدمن
                     const adminMsg = `🚨 **طلب جديد وصل للبوت!**\n\n` +
                         `👤 اسم العميل: [${userName}](tg://user?id=${chatId})\n` +
                         `🏷️ معرف العميل (ID): \`${chatId}\`\n` +
@@ -222,7 +219,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     return res.sendStatus(200);
                 }
 
-                // فتح القائمة الرئيسية مباشرة لجميع المستخدمين عند إرسال /start
                 if (text === '/start') {
                     const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
                     
@@ -241,7 +237,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         ]
                     ];
 
-                    // إضافة زر لوحة التحكم للأدمن فقط في القائمة الرئيسية
                     if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
                         keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين)', callback_data: 'admin_users_list' }]);
                     }
@@ -262,7 +257,34 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 users[chatId] = { name: 'مستخدم', username: 'لا يوجد', points: 0, ordersCount: 0, lastDaily: 0, lastWheel: 0, lastMemory: 0, lastBoxes: 0, lastShapes: 0, lastOrder: null, waitingForInput: null };
             }
 
-            // زر قائمة المستخدمين للأدمن عبر الكอลباك
+            // معالجة زر التحقق القديم لمنع أي تعليق (يفتح القائمة الرئيسية فوراً)
+            if (data === 'check_subscription') {
+                const menuText = `🎛️ **القائمة الرئيسية:**\nلديك حالياً: *${users[chatId].points} نقطة* 🪙\n\n🌹 منور المتجر يا غالي إذا عجبك لاتنسانا من دعمك 🤍✨`;
+                
+                let keyboardRows = [
+                    [
+                        { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
+                        { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' }
+                    ],
+                    [
+                        { text: '🎮 الألعاب وتجميع النقاط', callback_data: 'games_menu' },
+                        { text: '👤 حسابي ونقاطي', callback_data: 'my_account' }
+                    ],
+                    [
+                        { text: '📦 تتبع آخر طلب', callback_data: 'track_order' },
+                        { text: '🛠️ الدعم الفني', callback_data: 'support' }
+                    ]
+                ];
+
+                if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
+                    keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن (المستخدمين)', callback_data: 'admin_users_list' }]);
+                }
+
+                await editMessageText(chatId, messageId, menuText, { inline_keyboard: keyboardRows });
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_users_list') {
                 const allUserIds = Object.keys(users);
                 let adminPanelText = `🛠️ **قائمة كافة المستخدمين المسجلين (${allUserIds.length}):**\n\n`;
@@ -281,7 +303,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // --- التحكم بطلبات الأدمن ---
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && (data.startsWith('admin_done_') || data.startsWith('admin_fail_'))) {
                 const parts = data.split('_');
                 const action = parts[1];
@@ -763,7 +784,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
     }
 });
 
-// مسار لجعل السيرفر يعمل دائماً (Keep-Alive) ومنع انطفائه
 app.get('/', (req, res) => {
     res.send('Bot is running successfully!');
 });
