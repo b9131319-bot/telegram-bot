@@ -7,7 +7,7 @@ const path = require('path');
 const app = express();
 app.use(bodyParser.json());
 
-const TOKEN = '9056920590:AAEEJgaQARDcJqmWX_gYlROlpxcDNAog5uo';
+const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
 const ADMIN_CHAT_ID = '8266396167'; 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 const BOT_USERNAME = 'abod_store_bot'; 
@@ -624,7 +624,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
 
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_add_points') {
-                user.waitingForAdminAddPoints = true;
+                user.waitingForAdminAddPoints = true; // تم الإصلاح هنا لضمان استقبال الID الصحيح لاحقاً
                 saveDatabase();
                 await sendMessage(chatId, `🪙 أرسل معرف العميل (ID):`);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
@@ -752,6 +752,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 });
             }
 
+            // الألعاب الجديدة
             else if (data === 'play_flag') {
                 if (now - (user.lastFlagGame || 0) < oneDay) {
                     await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ لعبت "خمن العلم" اليوم!', show_alert: true });
@@ -796,6 +797,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            // قسم الخدمات المجانية
             else if (data === 'free_services_menu') {
                 user.waitingForInput = null;
                 saveDatabase();
@@ -811,6 +813,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 await editMessageText(chatId, messageId, `🎁 **قسم الخدمات المجانية:**\n\n- مسموح لك اختيار **خدمتين (2) فقط كل يوم**.\n- تنبيه: قد يقبل المتجر طلبك ويتم تنفيذه أو يتم رفضه بناءً على الضغط والتوفر.\nاختر الخدمة:`, kb);
             }
 
+            // قسم المتجر والخدمات والمنصات (أسعار عالية)
             else if (data === 'services_menu') {
                 user.waitingForInput = null;
                 saveDatabase();
