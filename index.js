@@ -7,7 +7,7 @@ const path = require('path');
 const app = express();
 app.use(bodyParser.json());
 
-const TOKEN = '8875290524:AAFYRFTuHXH4mcSn6q4v7I9V7YRFrDtSeHg';
+const TOKEN = '8875290524:AAFy5VbgAHje4Ld9YEVoLeZyoXbht_iwojw';
 const ADMIN_CHAT_ID = '8266396167'; 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 const BOT_USERNAME = 'abod_store_bot'; 
