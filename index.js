@@ -7,8 +7,7 @@ const path = require('path');
 const app = express();
 app.use(bodyParser.json());
 
-// التعديل الأمني: سحب التوكن من متغيرات البيئة لمنع الاختراق
-const TOKEN = process.env.TOKEN;
+const TOKEN = '9056920590:AAEEJgaQARDcJqmWX_gYlROlpxcDNAog5uo';
 const ADMIN_CHAT_ID = '8266396167'; 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 const BOT_USERNAME = 'abod_store_bot'; 
@@ -625,6 +624,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
 
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_add_points') {
+                user.waitingForAdminAddPoints = true;
+                saveDatabase();
                 await sendMessage(chatId, `🪙 أرسل معرف العميل (ID):`);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
@@ -664,12 +665,505 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         saveDatabase();
                     }
                 }
+
+                if (action === 'done') {
+                    await sendMessage(targetUserChatId, `🎉 **مبروك!** تم إتمام طلبك رقم \`${orderIdStr}\` بنجاح ✅.`);
+                    await editMessageText(chatId, messageId, `✅ **تم تأكيد إتمام الطلب (${orderIdStr}) بنجاح وإشعار العميل.**`);
+                } else {
+                    await sendMessage(targetUserChatId, `❌ **عذراً،** تم رفض أو إلغاء طلبك رقم \`${orderIdStr}\` ❌.`);
+                    await editMessageText(chatId, messageId, `❌ **تم تسجيل الطلب (${orderIdStr}) كفشل وإشعار العميل.**`);
+                }
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (data === 'daily_gift') {
+                if (now - (user.lastDaily || 0) < oneDay) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ استلمت الهدية اليومية مسبقاً! انتظر 24 ساعة.', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                user.lastDaily = now;
+                const giftPoints = Math.floor(Math.random() * 20) + 5;
+                user.points += giftPoints;
+                saveDatabase();
+                await editMessageText(chatId, messageId, `🎁 **استلمت هديلتك اليومية!**\nربحت *${giftPoints} نقطة* 🪙.\nرصيدك الحالي: ${user.points} نقطة.`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+                });
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (data === 'games_menu') {
+                const gamesKb = {
+                    inline_keyboard: [
+                        [{ text: '📦 لعبة الصناديق الحظ', callback_data: 'lucky_boxes' }],
+                        [{ text: '🎡 عجلة الحظ اليومية', callback_data: 'lucky_wheel' }],
+                        [{ text: '🌍 خمن العلم (سريع)', callback_data: 'play_flag' }],
+                        [{ text: '🔢 الحساب السريع', callback_data: 'play_math' }],
+                        [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, `🎮 **قسم الألعاب والتحديات:**\nاختر اللعبة المناسبة لربح النقاط:`, gamesKb);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (data === 'lucky_boxes') {
+                if (now - (user.lastBoxes || 0) < oneDay) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ لعبت الصناديق اليوم!', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                user.lastBoxes = now;
+                const boxesKb = {
+                    inline_keyboard: [
+                        [
+                            { text: '📦 صندوق 1', callback_data: 'box_open' },
+                            { text: '📦 صندوق 2', callback_data: 'box_open' },
+                            { text: '📦 صندوق 3', callback_data: 'box_open' }
+                        ],
+                        [{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, `📦 **لعبة الصناديق:**\nاختر صندوقاً واحداً عشوائياً لربح نقاط مجانية:`, boxesKb);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (data === 'box_open') {
+                const prize = Math.floor(Math.random() * 30) + 5;
+                user.points += prize;
+                saveDatabase();
+                await editMessageText(chatId, messageId, `📦 **اخترت الصندوق الرابح!**\nربحت *${prize} نقطة* 🪙.\nرصيدك الحالي: ${user.points} نقطة.`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]]
+                });
+            }
+
+            else if (data === 'lucky_wheel') {
+                if (now - (user.lastWheel || 0) < oneDay) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ لعبت عجلة الحظ اليوم!', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                user.lastWheel = now;
+                const prize = Math.floor(Math.random() * 40) + 10;
+                user.points += prize;
+                saveDatabase();
+                await editMessageText(chatId, messageId, `🎡 **دَارت عجلة الحظ وربحت:** *${prize} نقطة* 🪙.\nرصيدك الحالي: ${user.points} نقطة.`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للألعاب', callback_data: 'games_menu' }]]
+                });
+            }
+
+            else if (data === 'play_flag') {
+                if (now - (user.lastFlagGame || 0) < oneDay) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ لعبت "خمن العلم" اليوم!', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                user.lastFlagGame = now;
+                saveDatabase();
+
+                const flags = [
+                    { name: 'السعودية', flag: '🇸🇦' },
+                    { name: 'الإمارات', flag: '🇦🇪' },
+                    { name: 'الكويت', flag: '🇰🇼' },
+                    { name: 'مصر', flag: '🇪🇬' },
+                    { name: 'قطر', flag: '🇶🇦' }
+                ];
+                const selected = flags[Math.floor(Math.random() * flags.length)];
+                user.waitingForFlagAnswer = selected.name;
+                saveDatabase();
+
+                await editMessageText(chatId, messageId, `🌍 **لعبة خمن العلم!**\n\nما هي الدولة صاحب هذا العلم؟\n${selected.flag}\n\n⏳ **أرسل اسم الدولة في الشات الآن (خلال 5 ثوانٍ)!**`);
+                return res.sendStatus(200);
+            }
+
+            else if (data === 'play_math') {
+                if (now - (user.lastMathGame || 0) < oneDay) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ لعبت "الحساب السريع" اليوم!', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                user.lastMathGame = now;
+                saveDatabase();
+
+                const n1 = Math.floor(Math.random() * 50) + 10;
+                const n2 = Math.floor(Math.random() * 50) + 10;
+                const isPlus = Math.random() > 0.5;
+                const correctAnswer = isPlus ? n1 + n2 : n1 - n2;
+                const sign = isPlus ? '+' : '-';
+
+                user.waitingForMathAnswer = correctAnswer;
+                saveDatabase();
+
+                await editMessageText(chatId, messageId, `🔢 **لعبة الحساب السريع!**\n\nاحسب الناتج التالي:\n\`${n1} ${sign} ${n2} = ?\`\n\n⏳ **أرسل الناتج في الشات الآن (خلال 5 ثوانٍ)!**`);
+                return res.sendStatus(200);
+            }
+
+            else if (data === 'free_services_menu') {
+                user.waitingForInput = null;
+                saveDatabase();
+                const kb = {
+                    inline_keyboard: [
+                        [{ text: '🎁 100 مشاهدة تيك توك مجانية', callback_data: 'free_service_1' }],
+                        [{ text: '🎁 20 لايك انستقرام مجاني', callback_data: 'free_service_2' }],
+                        [{ text: '🎁 10 متابعين تيليجرام مجاني', callback_data: 'free_service_3' }],
+                        [{ text: '🎁 50 مشاهدة يوتيوب مجانية', callback_data: 'free_service_4' }],
+                        [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, `🎁 **قسم الخدمات المجانية:**\n\n- مسموح لك اختيار **خدمتين (2) فقط كل يوم**.\n- تنبيه: قد يقبل المتجر طلبك ويتم تنفيذه أو يتم رفضه بناءً على الضغط والتوفر.\nاختر الخدمة:`, kb);
+            }
+
+            else if (data === 'services_menu') {
+                user.waitingForInput = null;
+                saveDatabase();
+                const servText = `🛍️ **قسم المتجر والخدمات:**\nاختر القسم المطلوب:`;
+                const servKeyboard = {
+                    inline_keyboard: [
+                        [{ text: '🎵 خدمات تيك توك', callback_data: 'platform_tiktok' }],
+                        [{ text: '📺 خدمات يوتيوب', callback_data: 'platform_youtube' }],
+                        [{ text: '📸 خدمات انستقرام', callback_data: 'platform_insta' }],
+                        [{ text: '💜 خدمات تويتش (Twitch)', callback_data: 'platform_twitch' }],
+                        [{ text: '✈️ خدمات تيليجرام', callback_data: 'platform_telegram' }],
+                        [{ text: '✖️ خدمات منصة X (تويتر)', callback_data: 'platform_x' }],
+                        [{ text: '🛒 إنشاء متجر متكامل (2000 نقطة)', callback_data: 'pay_store_create' }],
+                        [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, servText, servKeyboard);
+            }
+
+            else if (data === 'platform_tiktok') {
+                await editMessageText(chatId, messageId, `🎵 **قسم تيك توك:**`, {
+                    inline_keyboard: [
+                        [{ text: '👤 10 إلى 50 متابع (180 نقطة)', callback_data: 'pay_tk_f1' }],
+                        [{ text: '👤 50 إلى 100 متابع (350 نقطة)', callback_data: 'pay_tk_f2' }],
+                        [{ text: '👤 100 إلى 200 متابع (650 نقطة)', callback_data: 'pay_tk_f3' }],
+                        [{ text: '👁️ مشاهدات 100 إلى 1000 (150 نقطة)', callback_data: 'pay_tk_v1' }],
+                        [{ text: '👁️ مشاهدات 1000 إلى 10000 (550 نقطة)', callback_data: 'pay_tk_v2' }],
+                        [{ text: '⬅️ رجوع للمتجر', callback_data: 'services_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'platform_youtube') {
+                await editMessageText(chatId, messageId, `📺 **قسم يوتيوب:**`, {
+                    inline_keyboard: [
+                        [{ text: '👤 10 إلى 50 مشترك (220 نقطة)', callback_data: 'pay_yt_f1' }],
+                        [{ text: '👤 50 إلى 100 مشترك (450 نقطة)', callback_data: 'pay_yt_f2' }],
+                        [{ text: '👤 100 إلى 200 مشترك (800 نقطة)', callback_data: 'pay_yt_f3' }],
+                        [{ text: '👁️ مشاهدات 100 إلى 1000 (180 نقطة)', callback_data: 'pay_yt_v1' }],
+                        [{ text: '👁️ مشاهدات 1000 إلى 10000 (700 نقطة)', callback_data: 'pay_yt_v2' }],
+                        [{ text: '⬅️ رجوع', callback_data: 'services_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'platform_insta') {
+                await editMessageText(chatId, messageId, `📸 **قسم انستقرام:**`, {
+                    inline_keyboard: [
+                        [{ text: '👤 10 إلى 50 متابع (200 نقطة)', callback_data: 'pay_in_f1' }],
+                        [{ text: '👤 50 إلى 100 متابع (400 نقطة)', callback_data: 'pay_in_f2' }],
+                        [{ text: '👤 100 إلى 200 متابع (720 نقطة)', callback_data: 'pay_in_f3' }],
+                        [{ text: '👁️ مشاهدات 100 إلى 1000 (160 نقطة)', callback_data: 'pay_in_v1' }],
+                        [{ text: '👁️ مشاهدات 1000 إلى 10000 (600 نقطة)', callback_data: 'pay_in_v2' }],
+                        [{ text: '⬅️ رجوع', callback_data: 'services_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'platform_twitch') {
+                await editMessageText(chatId, messageId, `💜 **قسم تويتش:**`, {
+                    inline_keyboard: [
+                        [{ text: '👤 متابعين 10 إلى 50 (190 نقطة)', callback_data: 'pay_tw_f1' }],
+                        [{ text: '👤 متابعين 50 إلى 100 (380 نقطة)', callback_data: 'pay_tw_f2' }],
+                        [{ text: '👁️ مشاهدات بث تويتش (240 نقطة)', callback_data: 'pay_tw_v1' }],
+                        [{ text: '⬅️ رجوع', callback_data: 'services_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'platform_telegram') {
+                await editMessageText(chatId, messageId, `✈️ **قسم تيليجرام:**`, {
+                    inline_keyboard: [
+                        [{ text: '👤 متابعين وقنوات (180 نقطة)', callback_data: 'pay_tg_f1' }],
+                        [{ text: '👁️ مشاهدات منشورات (150 نقطة)', callback_data: 'pay_tg_v1' }],
+                        [{ text: '⬅️ رجوع', callback_data: 'services_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'platform_x') {
+                await editMessageText(chatId, messageId, `✖️ **قسم منصة X:**`, {
+                    inline_keyboard: [
+                        [{ text: '👤 متابعين منصة X (200 نقطة)', callback_data: 'pay_x_f1' }],
+                        [{ text: '❤️ تفاعلات منشورات X (170 نقطة)', callback_data: 'pay_x_v1' }],
+                        [{ text: '⬅️ رجوع', callback_data: 'services_menu' }]
+                    ]
+                });
+            }
+
+            else if (data.startsWith('free_service_') || data.startsWith('pay_')) {
+                const serviceKey = data;
+                const serviceData = db.services[serviceKey];
+                let cost = serviceData ? serviceData.price : 200;
+
+                if (serviceData && serviceData.category === 'paid') {
+                    const level = getUserLevel(user.ordersCount);
+                    if (level.discount > 0) {
+                        cost = Math.round(cost * (1 - level.discount));
+                    }
+                    if (user.points < cost) {
+                        await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                            callback_query_id: callbackQuery.id,
+                            text: `❌ رصيدك غير كافٍ! لديك ${user.points} نقطة وتحتاج إلى ${cost} نقطة.`,
+                            show_alert: true
+                        });
+                        return res.sendStatus(200);
+                    }
+                }
+
+                user.waitingForInput = serviceKey;
+                saveDatabase();
+
+                const msgPrompt = serviceData && serviceData.category === 'free' 
+                    ? `🎁 **أرسل الآن رابط الحساب أو المنشور للخدمة المجانية:**\n(تنبيه: سيتم مراجعة طلبك وقد يقبله المتجر أو يرفضه)`
+                    : `🔗 **أرسل الآن في الشات رابط الحساب أو القناة المطلوبة:**\n*(التكلفة بعد الخصم: ${cost} نقطة)*`;
+
+                await editMessageText(chatId, messageId, msgPrompt, {
+                    inline_keyboard: [
+                        serviceData && serviceData.category === 'paid' ? [{ text: '🎫 إدخال كوبون خصم', callback_data: `apply_coupon_${serviceKey}` }] : [],
+                        [{ text: '⬅️ إلغاء والعودة', callback_data: 'services_menu' }]
+                    ].filter(row => row.length > 0)
+                });
+            }
+
+            else if (data.startsWith('apply_coupon_')) {
+                const serviceKey = data.replace('apply_coupon_', '');
+                user.waitingForCouponApply = serviceKey;
+                saveDatabase();
+                await editMessageText(chatId, messageId, `🎫 **أدخل كود كوبون الخصم الآن في الشات:**`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع', callback_data: serviceKey }]]
+                });
+            }
+
+            else if (data === 'my_orders') {
+                const orders = user.orders || [];
+                let txt = `📋 **سجل طلباتك السابقة والحالية (${orders.length}):**\n\n`;
+                if (orders.length === 0) {
+                    txt += `ليس لديك أي طلبات مسجلة حتى الآن!`;
+                } else {
+                    orders.slice(-10).forEach((ord, idx) => {
+                        txt += `${idx + 1}. *الخدمة:* ${ord.serviceName}\n` +
+                                     `📌 *الرقم:* \`${ord.orderId}\`\n` +
+                                     `📊 *الحالة:* ${ord.status}\n` +
+                                     `⭐ *التقييم:* ${ord.rating ? ord.rating + '/5 ⭐' : 'لم تقيم بعد'}\n\n`;
+                    });
+                }
+
+                const kbRows = orders.length > 0 ? [
+                    [{ text: '⭐ تقييم طلب مكتمل', callback_data: 'rate_choose_order' }],
+                    [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
+                ] : [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]];
+
+                await editMessageText(chatId, messageId, txt, { inline_keyboard: kbRows });
+            }
+
+            else if (data === 'rate_choose_order') {
+                const completedOrders = (user.orders || []).filter(o => o.status.includes('مكتمل'));
+                if (completedOrders.length === 0) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⚠️ ليس لديك طلبات مكتملة للتقييم!', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                let kb = completedOrders.map(o => [{ text: `⭐ تقييم طلب: ${o.orderId}`, callback_data: `rate_exec_${o.orderId}` }]);
+                kb.push([{ text: '⬅️ رجوع', callback_data: 'my_orders' }]);
+                await editMessageText(chatId, messageId, `⭐ **اختر رقم الطلب المراد تقييمه:**`, { inline_keyboard: kb });
+            }
+
+            else if (data.startsWith('rate_exec_')) {
+                const orderId = data.replace('rate_exec_', '');
+                await editMessageText(chatId, messageId, `⭐ **اختر تقييمك للطلب (${orderId}):**`, {
+                    inline_keyboard: [
+                        [
+                            { text: '⭐ 1', callback_data: `rating_set_${orderId}_1` },
+                            { text: '⭐⭐ 2', callback_data: `rating_set_${orderId}_2` },
+                            { text: '⭐⭐⭐ 3', callback_data: `rating_set_${orderId}_3` }
+                        ],
+                        [
+                            { text: '⭐⭐⭐⭐ 4', callback_data: `rating_set_${orderId}_4` },
+                            { text: '⭐⭐⭐⭐⭐ 5', callback_data: `rating_set_${orderId}_5` }
+                        ],
+                        [{ text: '⬅️ رجوع', callback_data: 'my_orders' }]
+                    ]
+                });
+            }
+
+            else if (data.startsWith('rating_set_')) {
+                const parts = data.split('_');
+                const orderId = parts[2];
+                const stars = parts[3];
+
+                const ord = (user.orders || []).find(o => o.orderId === orderId);
+                if (ord) {
+                    ord.rating = stars;
+                    saveDatabase();
+                }
+
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: `✅ شكراً لتقييمك بـ ${stars} نجوم!`, show_alert: true });
+                showMainMenu(chatId, messageId, true);
+            }
+
+            else if (data === 'referral_system') {
+                const refLink = `https://t.me/${BOT_USERNAME}?start=ref_${chatId}`;
+                const refText = `👥 **نظام دعوة الأصدقاء (الإحالات):**\n\n` +
+                    `🔗 رابط دعوتك الخاص:\n\`${refLink}\`\n\n` +
+                    `🎁 المكافأة: 10 نقاط لكل صديق (الحد الأقصى 100 نقطة).\n` +
+                    `👥 عدد المدعوين: *${user.referralCount || 0} شخص*.`;
+
+                await editMessageText(chatId, messageId, refText, {
+                    inline_keyboard: [
+                        [{ text: '🏆 قائمة المتصدرين', callback_data: 'leaderboard' }],
+                        [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'leaderboard') {
+                const sortedUsers = Object.entries(db.users)
+                    .sort((a, b) => (b[1].referralCount || 0) - (a[1].referralCount || 0))
+                    .slice(0, 5);
+
+                let lbText = `🏆 **قائمة المتصدرين في الإحالات:**\n\n`;
+                sortedUsers.forEach(([uid, u], idx) => {
+                    lbText += `${idx + 1}. [${u.name}](tg://user?id=${uid}) — عدد الدعوات: *${u.referralCount || 0}* 👥\n`;
+                });
+
+                await editMessageText(chatId, messageId, lbText, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع', callback_data: 'referral_system' }]]
+                });
+            }
+
+            else if (data === 'transfer_points') {
+                user.waitingForTransferId = true;
+                saveDatabase();
+                await editMessageText(chatId, messageId, `💳 **تحويل النقاط:**\nأرسل معرف (ID) المستخدم المراد التحويل له:`, {
+                    inline_keyboard: [[{ text: '⬅️ إلغاء', callback_data: 'main_menu' }]]
+                });
+            }
+
+            else if (data === 'buy_points') {
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+                    callback_query_id: callbackQuery.id,
+                    text: 'قريبًا جداً تفعيل بوابة شراء النقاط الشاملة! 🚀',
+                    show_alert: true
+                });
+            }
+
+            else if (data === 'my_account') {
+                const level = getUserLevel(user.ordersCount);
+                const accText = `👤 **معلومات حسابك والمستوى:**\n\n` +
+                    `🪙 النقاط: *${user.points} نقطة*\n` +
+                    `🏆 المستوي: *${level.name}*\n` +
+                    `📉 الخصم: *${level.discount * 100}%*\n` +
+                    `📦 الطلبات: *${user.ordersCount} طلب*\n` +
+                    `🏷️ المعرف: \`${chatId}\``;
+                
+                await editMessageText(chatId, messageId, accText, {
+                    inline_keyboard: [
+                        [{ text: '🎁 الإحالات والدعوات', callback_data: 'referral_system' }],
+                        [{ text: '💳 تحويل النقاط', callback_data: 'transfer_points' }],
+                        [{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                });
+            }
+
+            else if (data === 'track_order') {
+                if (!user.lastOrder || !user.orders || user.orders.length === 0) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⚠️ ليس لديك طلبات لتتبعها!', show_alert: true });
+                } else {
+                    const lastOrd = user.orders[user.orders.length - 1];
+                    await editMessageText(chatId, messageId, `📌 **تتبع الطلب الأخير:**\nرقم الطلب: \`${lastOrd.orderId}\`\nالخدمة: ${lastOrd.serviceName}\nالحالة: ${lastOrd.status}`, {
+                        inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+                    });
+                }
+            }
+
+            else if (data === 'support') {
+                await editMessageText(chatId, messageId, `🛠️ **الدعم الفني والخدمات:**\n👤 @abod097644`, {
+                    inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
+                });
             }
         }
-    } catch (e) {
-        console.error('Webhook error:', e);
+
+        res.sendStatus(200);
+    } catch (err) {
+        console.error('Webhook Error:', err);
+        res.sendStatus(200);
     }
-    res.sendStatus(200);
+});
+
+function showMainMenu(chatId, messageId = null, edit = false) {
+    const user = db.users[chatId] || { points: 0, ordersCount: 0 };
+    const level = getUserLevel(user.ordersCount);
+    const menuText = `🎛️ **القائمة الرئيسية لمتجر تيربو بلس:**\n\n` +
+        `🪙 رصيدك: *${user.points} نقطة*\n` +
+        `🏆 مستواك: *${level.name}*\n\n` +
+        `🌹 منور المتجر يا غالي، اختر القسم المناسب:`;
+
+    let keyboardRows = [
+        [
+            { text: '🎁 الهدية اليومية', callback_data: 'daily_gift' },
+            { text: '🎁 الخدمات المجانية', callback_data: 'free_services_menu' }
+        ],
+        [
+            { text: '🛍️ المتجر والخدمات', callback_data: 'services_menu' },
+            { text: '👥 نظام الإحالات', callback_data: 'referral_system' }
+        ],
+        [
+            { text: '🎮 الألعاب والتحديات', callback_data: 'games_menu' },
+            { text: '💳 تحويل النقاط', callback_data: 'transfer_points' }
+        ],
+        [
+            { text: '💰 شراء النقاط', callback_data: 'buy_points' },
+            { text: '📋 سجل طلباتي', callback_data: 'my_orders' }
+        ],
+        [
+            { text: '👤 حسابي والمستوى', callback_data: 'my_account' },
+            { text: '📦 تتبع آخر طلب', callback_data: 'track_order' }
+        ],
+        [
+            { text: '🛠️ الدعم الفني', callback_data: 'support' }
+        ]
+    ];
+
+    if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
+        keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن', callback_data: 'admin_panel' }]);
+    }
+
+    const menuKeyboard = { inline_keyboard: keyboardRows };
+
+    if (edit && messageId) {
+        editMessageText(chatId, messageId, menuText, menuKeyboard);
+    } else {
+        sendMessage(chatId, menuText, menuKeyboard);
+    }
+}
+
+function processOrder(chatId, serviceKey, user) {
+    user.ordersCount += 1;
+    const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
+    const serviceData = db.services[serviceKey];
+    let cost = serviceData ? serviceData.price : 200;
+    
+    if (user.points < cost) {
+        sendMessage(chatId, `❌ رصيدك غير كافٍ بعد الخصم.`);
+        return;
+    }
+    user.points -= cost;
+    user.lastOrder = orderId;
+    saveDatabase();
+    sendMessage(chatId, `✅ **تم تأكيد طلبك برقم:** \`${orderId}\`\nجاري التنفيذ... 🚀`);
+}
+
+app.get('/', (req, res) => {
+    res.send('Bot is running successfully!');
 });
 
 const PORT = process.env.PORT || 3000;
