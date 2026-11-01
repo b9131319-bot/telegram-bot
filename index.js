@@ -14,7 +14,6 @@ const BOT_USERNAME = 'abod_store_bot';
 
 const DB_FILE = path.join(__dirname, 'database.json');
 
-// قاعدة البيانات الدائمة
 let db = {
     users: {},
     giftCodes: {},
@@ -433,7 +432,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.weeklyTransfers = user.weeklyTransfers.filter(t => now - t < oneWeek);
 
                 if (user.weeklyTransfers.length >= 2) {
-                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقص للتحويل (مرتين أسبوعياً).**`);
+                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقصى للتحويل (مرتين أسبوعياً).**`);
                     return res.sendStatus(200);
                 }
 
@@ -491,7 +490,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     saveDatabase();
 
                     if (text.length < 3 || (!text.includes('http') && !text.includes('@') && !text.includes('www.'))) {
-                        await sendMessage(chatId, `❌ **الرابط أو اسم المستخدم غير صحيح!** يرجى إرسال رابط صحيح أو اسم مستخدم يحتوي على (@):`);
+                        await sendMessage(chatId, `❌ **الرابط غير صحيح!** يرجى إرسال رابط صحيح (للمقطع أو القناة) وتأكد أن الحساب عام:`);
                         user.waitingForInput = pendingService;
                         saveDatabase();
                         return res.sendStatus(200);
@@ -712,6 +711,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            // عند الضغط على إتمام الطلب أو فشل الطلب من لوحة الأدمن
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && (data.startsWith('admin_done_') || data.startsWith('admin_fail_'))) {
                 const parts = data.split('_');
                 const action = parts[1];
@@ -728,8 +728,22 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 }
 
                 if (action === 'done') {
-                    await sendMessage(targetUserChatId, `🎉 **مبروك!** تم إتمام طلبك رقم \`${orderIdStr}\` بنجاح ✅.`);
-                    await editMessageText(chatId, messageId, `✅ **تم تأكيد إتمام الطلب (${orderIdStr}) بنجاح وإشعار العميل.**`);
+                    // إرسال رسالة إتمام الطلب للعميل مع إظهار أزرار التقييم مباشرة
+                    const ratingKeyboard = {
+                        inline_keyboard: [
+                            [
+                                { text: '⭐ 1', callback_data: `rating_set_${orderIdStr}_1` },
+                                { text: '⭐⭐ 2', callback_data: `rating_set_${orderIdStr}_2` },
+                                { text: '⭐⭐⭐ 3', callback_data: `rating_set_${orderIdStr}_3` }
+                            ],
+                            [
+                                { text: '⭐⭐⭐⭐ 4', callback_data: `rating_set_${orderIdStr}_4` },
+                                { text: '⭐⭐⭐⭐⭐ 5', callback_data: `rating_set_${orderIdStr}_5` }
+                            ]
+                        ]
+                    };
+                    await sendMessage(targetUserChatId, `🎉 **مبروك!** تم إتمام طلبك رقم \`${orderIdStr}\` بنجاح ✅.\n\n⭐ **نود معرفة رأيك، كم تقييمك للخدمة معنا؟**`, ratingKeyboard);
+                    await editMessageText(chatId, messageId, `✅ **تم تأكيد إتمام الطلب (${orderIdStr}) بنجاح وإرسال طلب التقييم للعميل.**`);
                 } else {
                     await sendMessage(targetUserChatId, `❌ **عذراً،** تم رفض أو إلغاء طلبك رقم \`${orderIdStr}\` ❌.`);
                     await editMessageText(chatId, messageId, `❌ **تم تسجيل الطلب (${orderIdStr}) كفشل وإشعار العميل.**`);
@@ -993,8 +1007,8 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 saveDatabase();
 
                 const msgPrompt = serviceData && serviceData.category === 'free' 
-                    ? `🎁 **أرسل الآن رابط الحساب أو المنشور للخدمة المجانية:**\n(تنبيه: سيتم مراجعة طلبك وقد يقبله المتجر أو يرفضه)`
-                    : `🔗 **أرسل الآن في الشات رابط الحساب أو القناة المطلوبة:**\n*(التكلفة بعد الخصم: ${cost} نقطة)*`;
+                    ? `🎁 **أرسل الآن رابط المقطع أو القناة للخدمة المجانية (تأكد أن الحساب عام):**\n(تنبيه: سيتم مراجعة طلبك وقد يقبله المتجر أو يرفضه)`
+                    : `🔗 **أرسل الآن في الشات رابط المقطع أو القناة المطلوبة (تأكد أن الحساب عام):**\n*(التكلفة بعد الخصم: ${cost} نقطة)*`;
 
                 await editMessageText(chatId, messageId, msgPrompt, {
                     inline_keyboard: [
@@ -1064,6 +1078,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 });
             }
 
+            // استقبال التقييم عندما يضغط المستخدم على النجوم
             else if (data.startsWith('rating_set_')) {
                 const parts = data.split('_');
                 const orderId = parts[2];
@@ -1075,8 +1090,9 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     saveDatabase();
                 }
 
-                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: `✅ شكراً لتقييمك بـ ${stars} نجوم!`, show_alert: true });
-                showMainMenu(chatId, messageId, true);
+                await editMessageText(chatId, messageId, `✅ **شكراً لتقييمك الرائع بـ (${stars} نجوم)!**\nتم تسجيل تقييمك بنجاح يسعدنا خدمتك دائماً 🤍.`);
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: `✅ شكراً لتقييمك!`, show_alert: true });
+                return res.sendStatus(200);
             }
 
             else if (data === 'referral_system') {
