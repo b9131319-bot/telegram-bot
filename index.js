@@ -9,8 +9,8 @@ app.use(bodyParser.json());
 
 const TOKEN = '9056920590:AAEEJgaQARDcJqmWX_gYlROlpxcDNAog5uo';
 const ADMIN_CHAT_ID = '8266396167'; // الأدمن الأساسي (أنت)
-const SECOND_ADMIN_CHAT_ID = '8266396168'; // <--- ضع معرف الأدمن الجديد هنا (أرقام فقط - كمثال مؤقت)
-const SECOND_ADMIN_USERNAME = '@me11113'; // <--- يوزر الأدمن الجديد المطلوب
+const SECOND_ADMIN_CHAT_ID = '8266396168'; // معرف الأدمن الجديد 
+const SECOND_ADMIN_USERNAME = '@me11113'; // يوزر الأدمن الجديد
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 const BOT_USERNAME = 'abod_store_bot'; 
@@ -52,6 +52,10 @@ let db = {
         'pay_x_v1': { name: 'تفاعلات منصة X (لايكات/إعادة نشر)', price: 170, category: 'paid' },
 
         'pay_store_create': { name: 'خدمة إنشاء متجر متكامل', price: 2000, category: 'paid' },
+
+        // الخدمات الجديدة المضافة للقسم الخاص
+        'pay_rand_tk_acc': { name: 'حساب تيك توك عشوائي فاخر (نادر جداً)', price: 5000, category: 'special' },
+        'pay_recover_acc': { name: 'خدمة استرداد حساب مسروق/مهكر (احتمال ضعيف وغير مضمون)', price: 3500, category: 'special' },
 
         'free_service_1': { name: 'خدمة مجانية: 100 مشاهدة تيك توك مصغرة', price: 0, category: 'free' },
         'free_service_2': { name: 'خدمة مجانية: 20 لايك انستقرام مصغر', price: 0, category: 'free' },
@@ -181,7 +185,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // ميزة نشر الإعلانات والرسائل الجماعية للأدمن الأساسي والأدمن الجديد (@me11113)
             if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && user.waitingForBroadcast) {
                 user.waitingForBroadcast = false;
                 saveDatabase();
@@ -197,7 +200,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // إضافة وتعديل منشورات العروض بواسطة الأدمن الجديد (@me11113) أو الأدمن الرئيسي
             if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && user.waitingForServiceAdd) {
                 user.waitingForServiceAdd = false;
                 saveDatabase();
@@ -207,7 +209,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const sPrice = parseInt(parts[2]);
 
                 if (!sKey || !sName || isNaN(sPrice)) {
-                    await sendMessage(chatId, `❌ **خطأ في الصيغة!** استخدم الشكل التالي:\n\`مفتاح_الخدمة | اسم الخدمة | السعر\`\nمثال: \`pay_custom_1 | عرض خاص تيك توك | 150\``);
+                    await sendMessage(chatId, `❌ **خطأ في الصيغة!** استخدم الشكل التالي:\n\`مفتاح_الخدمة | اسم العرض | السعر\`\nمثال: \`pay_custom_1 | عرض خاص | 150\``);
                     return res.sendStatus(200);
                 }
 
@@ -378,10 +380,9 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
 
             if (text && text.startsWith('/start')) {
-                // ميزة تظهر للأدمن الجديد بثوانٍ قبل أن يشتغل البوت عنده
                 if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || userUsername === SECOND_ADMIN_USERNAME) {
                     await sendMessage(chatId, `⏳ جاري التحقق من صلاحيات المشرف...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // انتظار ثوانٍ
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                     await sendMessage(chatId, `✨ **منور البوت يا ادمن (${SECOND_ADMIN_USERNAME})!**\nتم تحميل صلاحياتك المخصصة بنجاح.`);
                 }
                 showMainMenu(chatId);
@@ -426,7 +427,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.weeklyTransfers = user.weeklyTransfers.filter(t => now - t < oneWeek);
 
                 if (user.weeklyTransfers.length >= 2) {
-                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقصى للتحويل (مرتين أسبوعياً).**`);
+                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقص للتحويل (مرتين أسبوعياً).**`);
                     return res.sendStatus(200);
                 }
 
@@ -563,7 +564,13 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     user.lastOrder = orderId;
                     saveDatabase();
 
-                    await sendMessage(chatId, `🔔 **إشعار تلقائي:**\nتم قبول طلبك برقم \`${orderId}\` وهو الآن **قيد التنفيذ 🚀**.`);
+                    // توجيه العميل للتواصل مع الدعم الفني بعد شراء أي خدمة مع رقم الطلب والمشكلة
+                    const supportMsg = `🔔 **تم قبول طلبك برقم:** \`${orderId}\`\n\n` +
+                        `🚨 **يرجى التواصل مع الدعم الفني فوراً عبر اليوزر التالي لإتمام طلبك:**\n` +
+                        `👤 الدعم الفني: @abod097644\n` +
+                        `📌 **أرسل لهم رقم طلبك ومشكلتك بالتفصيل ليتم خدمتِك بنجاح!**`;
+
+                    await sendMessage(chatId, supportMsg);
 
                     const adminMsg = `🚨 **طلب مدفوع جديد!**\n\n` +
                         `👤 العميل: [${userName}](tg://user?id=${chatId})\n` +
@@ -613,7 +620,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // خانة مزايا الأدمن المخصصة لـ @me11113 بالصلاحيات المطلوبة فقط
             if ((chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || user.username === SECOND_ADMIN_USERNAME) && data === 'second_admin_panel') {
                 const secondAdminKeyboard = {
                     inline_keyboard: [
@@ -636,11 +642,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // إضافة عرض جديد بواسطة الأدمن @me11113
             if ((chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || user.username === SECOND_ADMIN_USERNAME) && data === 'admin_add_service') {
                 user.waitingForServiceAdd = true;
                 saveDatabase();
-                await sendMessage(chatId, `➕ **إضافة وتعديل منشورات العروض:**\nأرسل بالصيغة التالية:\n\`مفتاح_الخدمة | اسم العرض | السعر\`\nمثال: \`offer_1 | عرض متابعين خاص | 100\``);
+                await sendMessage(chatId, `➕ **إنشاء وتعديل منشورات العروض:**\nأرسل بالصيغة التالية:\n\`مفتاح_الخدمة | اسم العرض | السعر\`\nمثال: \`offer_1 | عرض خاص | 100\``);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
@@ -918,6 +923,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const servText = `🛍️ **قسم المتجر والخدمات:**\nاختر القسم المطلوب:`;
                 const servKeyboard = {
                     inline_keyboard: [
+                        [{ text: '⚡ مخزن العروض الخاصة والخدمات النووية', callback_data: 'special_store_menu' }],
                         [{ text: '🎵 خدمات تيك توك', callback_data: 'platform_tiktok' }],
                         [{ text: '📺 خدمات يوتيوب', callback_data: 'platform_youtube' }],
                         [{ text: '📸 خدمات انستقرام', callback_data: 'platform_insta' }],
@@ -929,6 +935,17 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     ]
                 };
                 await editMessageText(chatId, messageId, servText, servKeyboard);
+            }
+
+            // القسم الجديد: مخزن العروض الخاصة (حسابات تيك توك عشوائية واسترداد حسابات مسروقة)
+            else if (data === 'special_store_menu') {
+                await editMessageText(chatId, messageId, `⚡ **مخزن العروض الخاصة والحصرية:**\nاختر القسم المناسب:`, {
+                    inline_keyboard: [
+                        [{ text: '🔥 بيع حسابات تيك توك عشوائية (سعر عالي جداً)', callback_data: 'pay_rand_tk_acc' }],
+                        [{ text: '🛡️ استرداد حسابات مسروقة/مهكرة (احتمال ضعيف وغير مضمون)', callback_data: 'pay_recover_acc' }],
+                        [{ text: '⬅️ رجوع للمتجر', callback_data: 'services_menu' }]
+                    ]
+                });
             }
 
             else if (data === 'platform_tiktok') {
@@ -1006,7 +1023,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const serviceData = db.services[serviceKey];
                 let cost = serviceData ? serviceData.price : 200;
 
-                if (serviceData && serviceData.category === 'paid') {
+                if (serviceData && serviceData.category === 'paid' || serviceData.category === 'special') {
                     const level = getUserLevel(user.ordersCount);
                     if (level.discount > 0) {
                         cost = Math.round(cost * (1 - level.discount));
@@ -1024,9 +1041,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.waitingForInput = serviceKey;
                 saveDatabase();
 
-                const msgPrompt = serviceData && serviceData.category === 'free' 
-                    ? `🎁 **أرسل الآن رابط المقطع أو القناة للخدمة المجانية (تأكد أن الحساب عام):**\n(تنبيه: سيتم مراجعة طلبك وقد يقبله المتجر أو يرفضه)`
-                    : `🔗 **أرسل الآن في الشات رابط المقطع أو القناة المطلوبة (تأكد أن الحساب عام):**\n*(التكلفة بعد الخصم: ${cost} نقطة)*`;
+                let msgPrompt = `🔗 **أرسل الآن في الشات رابط أو تفاصيل الحساب المطلوبة:**\n*(التكلفة: ${cost} نقطة)*`;
+                if (serviceKey === 'pay_rand_tk_acc') {
+                    msgPrompt = `🔥 **أرسل رابط حسابك أو معرفك لتسليم الحساب العشوائي عليه:**\n*(التكلفة: ${cost} نقطة - سعر عالي)*`;
+                } else if (serviceKey === 'pay_recover_acc') {
+                    msgPrompt = `🛡️ **أرسل يوزر الحساب المهكر أو المسروب ورابطه:**\n*(تنبيه: الخدمة بنسبة ضئيلة جداً وغير مضمونة والتكلفة: ${cost} نقطة)*`;
+                }
 
                 await editMessageText(chatId, messageId, msgPrompt, {
                     inline_keyboard: [
@@ -1187,12 +1207,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 }
             }
 
-            // قسم الدعم الفني المحدث ليظهر فيه يوزر الأدمن الجديد وملاحظة الأفكار الجديدة
+            // قسم الدعم الفني الأصلي المحدث
             else if (data === 'support') {
                 const supportText = `🛠️ **الدعم الفني وخدمة العملاء:**\n\n` +
-                    `🔹 الأدمن الأساسي: @abod097644\n` +
-                    `🔹 للاستفسارات والرد على العملاء: ${SECOND_ADMIN_USERNAME}\n\n` +
-                    `💡 **أي احد عنده فكره تنضاف لل بوت يتواصل مع الأدمن مباشرة عبر اليوزر: ${SECOND_ADMIN_USERNAME}**`;
+                    `🔹 الدعم الفني الاصلي: @abod097644\n` +
+                    `🔹 الأدمن المساعد: ${SECOND_ADMIN_USERNAME}\n\n` +
+                    `💡 **أي أحد عنده فكرة تنضاف للبت يتواصل مع الدعم الفني مباشرة!**`;
                 
                 await editMessageText(chatId, messageId, supportText, {
                     inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
@@ -1272,7 +1292,9 @@ function processOrder(chatId, serviceKey, user) {
     user.points -= cost;
     user.lastOrder = orderId;
     saveDatabase();
-    sendMessage(chatId, `✅ **تم تأكيد طلبك برقم:** \`${orderId}\`\nجاري التنفيذ... 🚀`);
+    
+    // توجيه العميل للدعم الفني مع رقم الطلب والمشكلة
+    sendMessage(chatId, `✅ **تم تأكيد طلبك برقم:** \`${orderId}\`\n\n🚨 **تنبيه هام:** يرجى التواصل مع الدعم الفني فوراً (@abod097644) وإرسال رقم طلبك ومشكلتك ليتم تنفيذ الخدمة لك.`);
 }
 
 app.get('/', (req, res) => {
