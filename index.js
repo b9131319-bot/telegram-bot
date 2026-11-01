@@ -9,7 +9,7 @@ app.use(bodyParser.json());
 
 const TOKEN = '9056920590:AAEEJgaQARDcJqmWX_gYlROlpxcDNAog5uo';
 const ADMIN_CHAT_ID = '8266396167'; // الأدمن الأساسي (أنت)
-const SECOND_ADMIN_CHAT_ID = 'ضع_معرف_الأدمن_الجديد_هنا'; // <--- ضع الـ ID الخاص بالأدمن الجديد هنا (أرقام فقط)
+const SECOND_ADMIN_CHAT_ID = 'ضع_معرف_الأدمن_الجديد_هنا'; // <--- معرف الأدمن الجديد (أرقام فقط)
 const SECOND_ADMIN_USERNAME = '@اسم_المستخدم_هنا'; // <--- يوزر الأدمن الجديد هنا
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
@@ -169,9 +169,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 };
                 saveDatabase();
 
+                // الترحيب المخصص فور دخول الأدمن الجديد للبوت
                 if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) {
-                    await sendMessage(chatId, `✨ **منور يا الأدمن (${SECOND_ADMIN_USERNAME})!** جاري تجهيز صلاحياتك المخصصة...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await sendMessage(chatId, `✨ **أهلاً بك يا مشرفنا القدير (${SECOND_ADMIN_USERNAME})!**\nتم تسجيل دخولك بنجاح وتفعيل لوحة الصلاحيات المخصصة لك في البوت.`);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
                 }
             } else {
                 db.users[chatId].name = userName;
@@ -185,6 +186,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            // ميزة نشر الإعلانات والرسائل الجماعية للأدمن الأساسي والأدمن الجديد
             if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && user.waitingForBroadcast) {
                 user.waitingForBroadcast = false;
                 saveDatabase();
@@ -192,11 +194,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 let successCount = 0;
                 for (const uid of allUserIds) {
                     try {
-                        await sendMessage(uid, `📢 **إعلان / رسالة جماعية:**\n\n${text}`);
+                        await sendMessage(uid, `📢 **إعلان / رسالة إدارية هامة:**\n\n${text}`);
                         successCount++;
                     } catch (e) {}
                 }
-                await sendMessage(chatId, `✅ **تم إرسال الرسائل الجماعية بنجاح إلى ${successCount} مشترك.**`);
+                await sendMessage(chatId, `✅ **تم إرسال الإعلانات والرسائل الجماعية بنجاح إلى (${successCount}) مشترك.**`);
                 return res.sendStatus(200);
             }
 
@@ -361,7 +363,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             if (text && text.startsWith('/start')) {
                 if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) {
-                    await sendMessage(chatId, `✨ **منور يا الأدمن (${SECOND_ADMIN_USERNAME})!** جاري تجهيز صلاحياتك المخصصة...`);
+                    await sendMessage(chatId, `✨ **أهلاً بك يا مشرفنا القدير (${SECOND_ADMIN_USERNAME})!**\nجاري تجهيز الصلاحيات المخصصة لك...`);
                     await new Promise(resolve => setTimeout(resolve, 1500));
                 }
                 showMainMenu(chatId);
@@ -406,7 +408,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.weeklyTransfers = user.weeklyTransfers.filter(t => now - t < oneWeek);
 
                 if (user.weeklyTransfers.length >= 2) {
-                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقص للتحويل (مرتين أسبوعياً).**`);
+                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقصى للتحويل (مرتين أسبوعياً).**`);
                     return res.sendStatus(200);
                 }
 
@@ -593,11 +595,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            // لوحة صلاحيات الأدمن الجديد المخصصة (نشر إعلانات، رسائل جماعية، إدارة الإعلانات، المسابقات، متابعة النشاط)
             if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() && data === 'second_admin_panel') {
                 const secondAdminKeyboard = {
                     inline_keyboard: [
                         [
-                            { text: '📢 إرسال رسائل جماعية (إعلانات)', callback_data: 'admin_broadcast' },
+                            { text: '📢 نشر إعلانات ورسائل جماعية', callback_data: 'admin_broadcast' },
                             { text: '🎯 إدارة قسم الإعلانات والعروض', callback_data: 'services_menu' }
                         ],
                         [
@@ -607,7 +610,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         [{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]
                     ]
                 };
-                await editMessageText(chatId, messageId, `🔐 **لوحة صلاحيات الأدمن المخصصة لك:**\nيمكنك التحكم بالمهام المصرحة لك فقط بكل إتقان وأمان.`, secondAdminKeyboard);
+                await editMessageText(chatId, messageId, `🛡️ **لوحة التحكم الخاصة بالأدمن:**\n\n- نشر الإعلانات والرسائل الجماعية.\n- إدارة قسم الإعلانات والعروض.\n- متابعة الطلبات والشكاوى.\n- إدارة المسابقات والألعاب المجانية.`, secondAdminKeyboard);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
@@ -641,7 +644,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && data === 'admin_broadcast') {
                 user.waitingForBroadcast = true;
                 saveDatabase();
-                await sendMessage(chatId, `📢 **نشر إعلانات / رسائل جماعية:**\nأرسل الآن نص الإعلان أو الرسالة:`);
+                await sendMessage(chatId, `📢 **نشر إعلانات / رسائل جماعية للمشتركين:**\nأرسل الآن نص الإعلان أو الرسالة:`);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
@@ -1148,16 +1151,17 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⚠️ ليس لديك طلبات لتتبعها!', show_alert: true });
                 } else {
                     const lastOrd = user.orders[user.orders.length - 1];
-                    await editMessageText(chatId, messageId, `📌 **تتبع الطلب الأخير:**\nرقم الطلب: \`${lastOrd.orderId}\`\nالخدمة: ${lastOrd.serviceName}\nالحالة: ${lastOrd.status}`, {
+                    await editMessageText(chatId, messageId, `📌 **متابعة الطلبات ونشاط البوت:**\nرقم الطلب: \`${lastOrd.orderId}\`\nالخدمة: ${lastOrd.serviceName}\nالحالة: ${lastOrd.status}`, {
                         inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
                     });
                 }
             }
 
+            // قسم الدعم الفني المحدث بحيث يظهر عنده يوزر الأدمن الجديد والاستفسارات
             else if (data === 'support') {
-                const supportText = `🛠️ **الدعم الفني والخدمات:**\n\n` +
+                const supportText = `🛠️ **الدعم الفني وخدمة العملاء:**\n\n` +
                     `🔹 الأدمن الأساسي: @abod097644\n` +
-                    `🔹 للاستفسارات وتقديم الأفكار للبوت يرجى التواصل هنا: ${SECOND_ADMIN_USERNAME}`;
+                    `🔹 للاستفسارات، المساعدة وتقديم الأفكار للبوت يرجى التواصل هنا: ${SECOND_ADMIN_USERNAME}`;
                 
                 await editMessageText(chatId, messageId, supportText, {
                     inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
@@ -1212,7 +1216,7 @@ function showMainMenu(chatId, messageId = null, edit = false) {
     }
 
     if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) {
-        keyboardRows.push([{ text: '🛡️ صلاحيات الأدمن', callback_data: 'second_admin_panel' }]);
+        keyboardRows.push([{ text: '🛡️ صلاحيات الأدمن المخصصة', callback_data: 'second_admin_panel' }]);
     }
 
     const menuKeyboard = { inline_keyboard: keyboardRows };
