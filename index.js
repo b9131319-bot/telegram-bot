@@ -8,7 +8,10 @@ const app = express();
 app.use(bodyParser.json());
 
 const TOKEN = '9056920590:AAEEJgaQARDcJqmWX_gYlROlpxcDNAog5uo';
-const ADMIN_CHAT_ID = '8266396167'; 
+const ADMIN_CHAT_ID = '8266396167'; // الأدمن الأساسي (أنت)
+const SECOND_ADMIN_CHAT_ID = 'ضع_معرف_الأدمن_الجديد_هنا'; // <--- ضع الـ ID الخاص بالأدمن الجديد هنا (أرقام فقط)
+const SECOND_ADMIN_USERNAME = '@اسم_المستخدم_هنا'; // <--- يوزر الأدمن الجديد هنا
+
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 const BOT_USERNAME = 'abod_store_bot'; 
 
@@ -143,7 +146,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     ordersCount: 0,
                     lastDaily: 0,
                     lastWheel: 0,
-                    lastMemory: 0,
                     lastBoxes: 0,
                     lastFlagGame: 0,
                     lastMathGame: 0,
@@ -166,6 +168,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     waitingForAdminBan: null
                 };
                 saveDatabase();
+
+                if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) {
+                    await sendMessage(chatId, `✨ **منور يا الأدمن (${SECOND_ADMIN_USERNAME})!** جاري تجهيز صلاحياتك المخصصة...`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
             } else {
                 db.users[chatId].name = userName;
                 db.users[chatId].username = userUsername;
@@ -173,23 +180,23 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             const user = db.users[chatId];
 
-            if (user.isBanned && chatId.toString() !== ADMIN_CHAT_ID.toString()) {
+            if (user.isBanned && chatId.toString() !== ADMIN_CHAT_ID.toString() && chatId.toString() !== SECOND_ADMIN_CHAT_ID.toString()) {
                 await sendMessage(chatId, `❌ **عذراً، تم حظرك من استخدام البوت بواسطة الإدارة.**`);
                 return res.sendStatus(200);
             }
 
-            if (chatId.toString() === ADMIN_CHAT_ID.toString() && user.waitingForBroadcast) {
+            if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && user.waitingForBroadcast) {
                 user.waitingForBroadcast = false;
                 saveDatabase();
                 const allUserIds = Object.keys(db.users);
                 let successCount = 0;
                 for (const uid of allUserIds) {
                     try {
-                        await sendMessage(uid, `📢 **رسالة من الإدارة:**\n\n${text}`);
+                        await sendMessage(uid, `📢 **إعلان / رسالة جماعية:**\n\n${text}`);
                         successCount++;
                     } catch (e) {}
                 }
-                await sendMessage(ADMIN_CHAT_ID, `✅ **تم إرسال الإذاعة بنجاح إلى ${successCount} مستخدم.**`);
+                await sendMessage(chatId, `✅ **تم إرسال الرسائل الجماعية بنجاح إلى ${successCount} مشترك.**`);
                 return res.sendStatus(200);
             }
 
@@ -352,46 +359,13 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            if (text && text.startsWith('/start ')) {
-                const payload = text.split(' ')[1];
-
-                if (payload && db.giftCodes[payload]) {
-                    const gift = db.giftCodes[payload];
-                    const now = Date.now();
-                    if (now > gift.expiresAt) {
-                        await sendMessage(chatId, `❌ **عذراً، انتهت صلاحية رابط الهدية هذا!**`);
-                        return res.sendStatus(200);
-                    }
-                    if (gift.usedBy.includes(chatId)) {
-                        await sendMessage(chatId, `⚠️ **لقد استلمت هذه الهدية مسبقاً!**`);
-                        return res.sendStatus(200);
-                    }
-                    gift.usedBy.push(chatId);
-                    user.points += gift.points;
-                    saveDatabase();
-                    await sendMessage(chatId, `🎉 **مبروك يا غالي! وصلتك هدية الإدارة 🤍**\n\n🎁 القيمة: **${gift.points} نقطة** 🪙\nرصيدك الحالي: *${user.points} نقطة*.`, {
-                        inline_keyboard: [[{ text: '⬅️ فتح القائمة الرئيسية', callback_data: 'main_menu' }]]
-                    });
-                    return res.sendStatus(200);
+            if (text && text.startsWith('/start')) {
+                if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) {
+                    await sendMessage(chatId, `✨ **منور يا الأدمن (${SECOND_ADMIN_USERNAME})!** جاري تجهيز صلاحياتك المخصصة...`);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
                 }
-
-                if (payload && payload.startsWith('ref_')) {
-                    const inviterId = payload.split('_')[1];
-                    if (inviterId && inviterId !== chatId.toString() && db.users[inviterId] && !user.referredBy) {
-                        user.referredBy = inviterId;
-                        const inviter = db.users[inviterId];
-                        if (inviter.referralCount < 100) {
-                            inviter.referralCount += 1;
-                            const reward = 10;
-                            if (inviter.referralCount * reward <= 100) {
-                                inviter.points += reward;
-                                inviter.transfers.push({ type: 'referral', desc: `مكافأة إحالة من المستخدم ${chatId}`, amount: reward, time: Date.now() });
-                                await sendMessage(inviterId, `👥 **دعوة ناجحة جديدة!**\nانضم مستخدم عبر رابط إحالتك وتمت إضافة *${reward} نقاط* لرصيدك.`);
-                            }
-                        }
-                        saveDatabase();
-                    }
-                }
+                showMainMenu(chatId);
+                return res.sendStatus(200);
             }
 
             if (user.waitingForTransferId) {
@@ -432,7 +406,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.weeklyTransfers = user.weeklyTransfers.filter(t => now - t < oneWeek);
 
                 if (user.weeklyTransfers.length >= 2) {
-                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقصى للتحويل (مرتين أسبوعياً).**`);
+                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقص للتحويل (مرتين أسبوعياً).**`);
                     return res.sendStatus(200);
                 }
 
@@ -619,8 +593,21 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            if (data === 'check_subscription') {
-                showMainMenu(chatId, messageId, true);
+            if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() && data === 'second_admin_panel') {
+                const secondAdminKeyboard = {
+                    inline_keyboard: [
+                        [
+                            { text: '📢 إرسال رسائل جماعية (إعلانات)', callback_data: 'admin_broadcast' },
+                            { text: '🎯 إدارة قسم الإعلانات والعروض', callback_data: 'services_menu' }
+                        ],
+                        [
+                            { text: '🎮 إدارة المسابقات والألعاب', callback_data: 'games_menu' },
+                            { text: '📊 متابعة نشاط البوت والشكاوى', callback_data: 'track_order' }
+                        ],
+                        [{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, `🔐 **لوحة صلاحيات الأدمن المخصصة لك:**\nيمكنك التحكم بالمهام المصرحة لك فقط بكل إتقان وأمان.`, secondAdminKeyboard);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
@@ -646,15 +633,15 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                         [{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]
                     ]
                 };
-                await editMessageText(chatId, messageId, `🛠️ **لوحة تحكم الأدمن:**`, adminKeyboard);
+                await editMessageText(chatId, messageId, `🛠️ **لوحة تحكم الأدمن الرئيسي:**`, adminKeyboard);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
 
-            if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_broadcast') {
+            if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && data === 'admin_broadcast') {
                 user.waitingForBroadcast = true;
                 saveDatabase();
-                await sendMessage(chatId, `📢 **إذاعة عامة لجميع المستخدمين:**\nأرسل الآن نص الرسالة:`);
+                await sendMessage(chatId, `📢 **نشر إعلانات / رسائل جماعية:**\nأرسل الآن نص الإعلان أو الرسالة:`);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
                 return res.sendStatus(200);
             }
@@ -711,7 +698,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // عند الضغط على إتمام الطلب أو فشل الطلب من لوحة الأدمن
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && (data.startsWith('admin_done_') || data.startsWith('admin_fail_'))) {
                 const parts = data.split('_');
                 const action = parts[1];
@@ -728,7 +714,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 }
 
                 if (action === 'done') {
-                    // إرسال رسالة إتمام الطلب للعميل مع إظهار أزرار التقييم مباشرة
                     const ratingKeyboard = {
                         inline_keyboard: [
                             [
@@ -1078,7 +1063,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 });
             }
 
-            // استقبال التقييم عندما يضغط المستخدم على النجوم
             else if (data.startsWith('rating_set_')) {
                 const parts = data.split('_');
                 const orderId = parts[2];
@@ -1171,7 +1155,11 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
 
             else if (data === 'support') {
-                await editMessageText(chatId, messageId, `🛠️ **الدعم الفني والخدمات:**\n👤 @abod097644`, {
+                const supportText = `🛠️ **الدعم الفني والخدمات:**\n\n` +
+                    `🔹 الأدمن الأساسي: @abod097644\n` +
+                    `🔹 للاستفسارات وتقديم الأفكار للبوت يرجى التواصل هنا: ${SECOND_ADMIN_USERNAME}`;
+                
+                await editMessageText(chatId, messageId, supportText, {
                     inline_keyboard: [[{ text: '⬅️ رجوع للقائمة الرئيسية', callback_data: 'main_menu' }]]
                 });
             }
@@ -1220,7 +1208,11 @@ function showMainMenu(chatId, messageId = null, edit = false) {
     ];
 
     if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
-        keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن', callback_data: 'admin_panel' }]);
+        keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن الرئيسي', callback_data: 'admin_panel' }]);
+    }
+
+    if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) {
+        keyboardRows.push([{ text: '🛡️ صلاحيات الأدمن', callback_data: 'second_admin_panel' }]);
     }
 
     const menuKeyboard = { inline_keyboard: keyboardRows };
