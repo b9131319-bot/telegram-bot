@@ -53,7 +53,6 @@ let db = {
 
         'pay_store_create': { name: 'خدمة إنشاء متجر متكامل', price: 2000, category: 'paid' },
 
-        // الخدمات الجديدة المضافة للقسم الخاص
         'pay_rand_tk_acc': { name: 'حساب تيك توك عشوائي فاخر (نادر جداً)', price: 5000, category: 'special' },
         'pay_recover_acc': { name: 'خدمة استرداد حساب مسروق/مهكر (احتمال ضعيف وغير مضمون)', price: 3500, category: 'special' },
 
@@ -142,7 +141,9 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             const userName = update.message.from.first_name || 'مستخدم';
             const userUsername = update.message.from.username ? `@${update.message.from.username}` : 'لا يوجد';
 
+            let isNewUser = false;
             if (!db.users[chatId]) {
+                isNewUser = true;
                 db.users[chatId] = {
                     name: userName,
                     username: userUsername,
@@ -173,6 +174,16 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     waitingForServiceAdd: null
                 };
                 saveDatabase();
+
+                // 🔔 إشعار فوري للأدمن الأساسي بكامل معلومات العميل الجديد الذي دخل البوت
+                if (chatId.toString() !== ADMIN_CHAT_ID.toString()) {
+                    const notifyAdminText = `🚨 **عضو جديد دخل البوت!**\n\n` +
+                        `👤 الاسم: ${userName}\n` +
+                        `🔗 المعرف (Username): ${userUsername}\n` +
+                        `🆔 الأيدي (ID): \`${chatId}\`\n` +
+                        `💬 رابط التواصل: [اضغط هنا للتواصل](tg://user?id=${chatId})`;
+                    await sendMessage(ADMIN_CHAT_ID, notifyAdminText);
+                }
             } else {
                 db.users[chatId].name = userName;
                 db.users[chatId].username = userUsername;
@@ -209,7 +220,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const sPrice = parseInt(parts[2]);
 
                 if (!sKey || !sName || isNaN(sPrice)) {
-                    await sendMessage(chatId, `❌ **خطأ في الصيغة!** استخدم الشكل التالي:\n\`مفتاح_الخدمة | اسم العرض | السعر\`\nمثال: \`pay_custom_1 | عرض خاص | 150\``);
+                    await sendMessage(chatId, `❌ **خطأ في الصيغة!** استخدم الشكل التالي:\n\`مفتاح_الخدمة | اسم العرض | السعر\`\nمثال: \`offer_1 | عرض خاص | 100\``);
                     return res.sendStatus(200);
                 }
 
@@ -427,7 +438,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.weeklyTransfers = user.weeklyTransfers.filter(t => now - t < oneWeek);
 
                 if (user.weeklyTransfers.length >= 2) {
-                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقص للتحويل (مرتين أسبوعياً).**`);
+                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقصى للتحويل (مرتين أسبوعياً).**`);
                     return res.sendStatus(200);
                 }
 
@@ -564,11 +575,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     user.lastOrder = orderId;
                     saveDatabase();
 
-                    // توجيه العميل للتواصل مع الدعم الفني بعد شراء أي خدمة مع رقم الطلب والمشكلة
                     const supportMsg = `🔔 **تم قبول طلبك برقم:** \`${orderId}\`\n\n` +
-                        `🚨 **يرجى التواصل مع الدعم الفني فوراً عبر اليوزر التالي لإتمام طلبك:**\n` +
+                        `🚨 **تنبيه هام:** يرجى التواصل مع الدعم الفني فوراً عبر اليوزر التالي لإتمام طلبك:\n` +
                         `👤 الدعم الفني: @abod097644\n` +
-                        `📌 **أرسل لهم رقم طلبك ومشكلتك بالتفصيل ليتم خدمتِك بنجاح!**`;
+                        `📌 **أرسل لهم رقم طلبك ومشكلتك بالتفصيل ليتم خدمِتك بنجاح!**`;
 
                     await sendMessage(chatId, supportMsg);
 
@@ -937,7 +947,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 await editMessageText(chatId, messageId, servText, servKeyboard);
             }
 
-            // القسم الجديد: مخزن العروض الخاصة (حسابات تيك توك عشوائية واسترداد حسابات مسروقة)
             else if (data === 'special_store_menu') {
                 await editMessageText(chatId, messageId, `⚡ **مخزن العروض الخاصة والحصرية:**\nاختر القسم المناسب:`, {
                     inline_keyboard: [
@@ -1023,7 +1032,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 const serviceData = db.services[serviceKey];
                 let cost = serviceData ? serviceData.price : 200;
 
-                if (serviceData && serviceData.category === 'paid' || serviceData.category === 'special') {
+                if (serviceData && (serviceData.category === 'paid' || serviceData.category === 'special')) {
                     const level = getUserLevel(user.ordersCount);
                     if (level.discount > 0) {
                         cost = Math.round(cost * (1 - level.discount));
@@ -1207,7 +1216,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 }
             }
 
-            // قسم الدعم الفني الأصلي المحدث
             else if (data === 'support') {
                 const supportText = `🛠️ **الدعم الفني وخدمة العملاء:**\n\n` +
                     `🔹 الدعم الفني الاصلي: @abod097644\n` +
@@ -1293,7 +1301,6 @@ function processOrder(chatId, serviceKey, user) {
     user.lastOrder = orderId;
     saveDatabase();
     
-    // توجيه العميل للدعم الفني مع رقم الطلب والمشكلة
     sendMessage(chatId, `✅ **تم تأكيد طلبك برقم:** \`${orderId}\`\n\n🚨 **تنبيه هام:** يرجى التواصل مع الدعم الفني فوراً (@abod097644) وإرسال رقم طلبك ومشكلتك ليتم تنفيذ الخدمة لك.`);
 }
 
@@ -1301,7 +1308,14 @@ app.get('/', (req, res) => {
     res.send('Bot is running successfully!');
 });
 
+// ⚡ ميزة منع البوت من النوم وابقائه مستيقظاً 24/7
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+
+// إرسال طلب وهمي كل 14 دقيقة لسيرفر البوت نفسه لمنع سبات الاستضافة
+setInterval(() => {
+    const appUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    axios.get(appUrl).catch(() => {});
+}, 14 * 60 * 1000);
