@@ -56,7 +56,6 @@ let db = {
         'pay_rand_tk_acc': { name: 'حساب تيك توك عشوائي فاخر (نادر جداً)', price: 5000, category: 'special' },
         'pay_recover_acc': { name: 'خدمة استرداد حساب مسروق/مهكر (احتمال ضعيف وغير مضمون)', price: 3500, category: 'special' },
 
-        // خدمات مجانية موسعة (مطابقة للصورة الأولى)
         'free_service_1': { name: 'مجاني: 100 مشاهدة تيك توك مصغرة', price: 0, category: 'free' },
         'free_service_2': { name: 'مجاني: 20 لايك انستقرام مصغر', price: 0, category: 'free' },
         'free_service_3': { name: 'مجاني: 10 متابعين تيليجرام تجريبي', price: 0, category: 'free' },
@@ -178,11 +177,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     waitingForAdminAddPoints: null,
                     waitingForAdminBan: null,
                     waitingForServiceAdd: null,
-                    waitingForTiktokFollowProof: false
+                    lastTiktokTaskTime: 0
                 };
                 saveDatabase();
 
-                // إشعار فوري للأدمن بدخول العضو الجديد
                 if (chatId.toString() !== ADMIN_CHAT_ID.toString()) {
                     const notifyAdminText = `🚨 **عضو جديد دخل البوت!**\n\n` +
                         `👤 الاسم: ${userName}\n` +
@@ -215,21 +213,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                     } catch (e) {}
                 }
                 await sendMessage(chatId, `✅ **تم إرسال الإعلانات والرسائل الجماعية بنجاح إلى (${successCount}) مشترك.**`);
-                return res.sendStatus(200);
-            }
-
-            // التحقق من إثبات متابعة حساب التيك توك للحصول على 25 نقطة
-            if (user.waitingForTiktokFollowProof) {
-                user.waitingForTiktokFollowProof = false;
-                saveDatabase();
-                if (text.length > 2 && (text.includes('http') || text.includes('@') || text.includes('done') || text.includes('تم'))) {
-                    user.points += 25;
-                    saveDatabase();
-                    await sendMessage(chatId, `🎉 **تم التحقق بنجاح!**\n🎁 تمت إضافة *25 نقطة* إلى رصيدك.\nرصيدك الحالي: *${user.points} نقطة* 🪙.`);
-                } else {
-                    await sendMessage(chatId, `❌ **عذراً، الرابط غير صحيح أو لم تقم بإرفاق دليل المتابعة الصحيح.**`);
-                }
-                showMainMenu(chatId);
                 return res.sendStatus(200);
             }
 
@@ -460,7 +443,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 user.weeklyTransfers = user.weeklyTransfers.filter(t => now - t < oneWeek);
 
                 if (user.weeklyTransfers.length >= 2) {
-                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقصى للتحويل (مرتين أسبوعياً).**`);
+                    await sendMessage(chatId, `⚠️ **عذراً، لقد استنفدت الحد الأقص للتحويل (مرتين أسبوعياً).**`);
                     return res.sendStatus(200);
                 }
 
@@ -659,7 +642,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                             { text: '📢 نشر إعلانات ورسائل جماعية', callback_data: 'admin_broadcast' }
                         ],
                         [
-                            { text: '🛒 إدارة المتجر والخدمات', callback_data: 'services_menu' },
+                            { text: '⚡🔥 قسم تعزيز الحسابات والرشقات السريعة', callback_data: 'services_menu' },
                             { text: '➕ إضافة/تعديل منشور عرض', callback_data: 'admin_add_service' }
                         ],
                         [
@@ -682,7 +665,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // لوحة تحكم الأدمن الرئيسي مع أداء البوت الشامل (من الصورة الثانية)
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_panel') {
                 const totalUsers = Object.keys(db.users).length;
                 const adminKeyboard = {
@@ -711,7 +693,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // تقرير الأداء والأمان الشامل (مطابق تماماً لما طلبته في الصورة الثانية)
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_bot_status') {
                 const totalUsers = Object.keys(db.users).length;
                 const statusText = `📊 **تقرير أداء وحالة البوت الشامل:**\n\n` +
@@ -871,7 +852,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // قسم الألعاب والتحديات مع القسم الجديد المضاف (إضافة حساب تيك توك للحصول على 25 نقطة)
             if (data === 'games_menu') {
                 const gamesKb = {
                     inline_keyboard: [
@@ -888,15 +868,33 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // تنفيذ مهمة متابعة حساب تيك توك المطلوب
+            // مهمة تيك توك الأوتوماتيكية بضغطة زر
             if (data === 'task_tiktok_follow') {
-                user.waitingForTiktokFollowProof = true;
-                saveDatabase();
                 const targetTiktokUrl = 'https://www.tiktok.com/@e..e233?_r=1&_t=ZS-9B4Mz6fnzAP';
-                await editMessageText(chatId, messageId, `🎯 **مهمة كسب 25 نقطة:**\n\n1. قم بمتابعة الحساب التالي على تيك توك:\n${targetTiktokUrl}\n\n2. **أرسل في الشات الآن (رابط حسابك أو إثبات المتابعة) لتستلم 25 نقطة فوراً!**`, {
-                    inline_keyboard: [[{ text: '⬅️ إلغاء', callback_data: 'games_menu' }]]
-                });
+                const taskKb = {
+                    inline_keyboard: [
+                        [{ text: '🔗 اضغط هنا لمتابعة الحساب', url: targetTiktokUrl }],
+                        [{ text: '✅ تأكيد المتابعة (استلام 25 نقطة)', callback_data: 'claim_tiktok_reward' }],
+                        [{ text: '⬅️ رجوع', callback_data: 'games_menu' }]
+                    ]
+                };
+                await editMessageText(chatId, messageId, `🎯 **مهمة كسب 25 نقطة:**\n\n1. اضغط على الزر أدناه لمتابعة الحساب على تيك توك.\n2. بعد إتمام المتابعة، اضغط على زر **"تأكيد المتابعة"** لتحصل على النقاط فوراً!`, taskKb);
                 await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
+                return res.sendStatus(200);
+            }
+
+            if (data === 'claim_tiktok_reward') {
+                const oneDayCheck = 24 * 60 * 60 * 1000;
+                if (now - (user.lastTiktokTaskTime || 0) < oneDayCheck) {
+                    await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '⏳ لقد نفذت هذه المهمة اليوم! انتظر 24 ساعة.', show_alert: true });
+                    return res.sendStatus(200);
+                }
+                user.lastTiktokTaskTime = now;
+                user.points += 25;
+                saveDatabase();
+
+                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id, text: '🎉 مبروك! تمت إضافة 25 نقطة إلى رصيدك بنجاح.', show_alert: true });
+                showMainMenu(chatId, messageId, true);
                 return res.sendStatus(200);
             }
 
@@ -986,7 +984,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // مركز الخدمات المجانية السريعة (الموسع بخدمات مصغرة متعددة)
             else if (data === 'free_services_menu') {
                 user.waitingForInput = null;
                 saveDatabase();
@@ -1009,11 +1006,10 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 await editMessageText(chatId, messageId, `💎 **مركز الخدمات المجانية السريعة:**\n\n- مسموح لك اختيار **خدمتين (2) فقط كل يوم**.\n- تنبيه: خدمات مصغرة (بإمكانيات محدودة مثل 100 مشاهدة أو 20 لايك).\nاختر الخدمة المناسبة:`, kb);
             }
 
-            // متجر تيربو بلس الملكي (الاسم الفخم الجديد للمتجر والخدمات)
             else if (data === 'services_menu') {
                 user.waitingForInput = null;
                 saveDatabase();
-                const servText = `🛒 **متجر تيربو بلس الملكي:**\nاختر القسم المطلوب:`;
+                const servText = `⚡🔥 **قسم تعزيز الحسابات والرشقات السريعة:**\nاختر القسم المطلوب:`;
                 const servKeyboard = {
                     inline_keyboard: [
                         [{ text: '⚡ مخزن العروض الخاصة والخدمات النووية', callback_data: 'special_store_menu' }],
@@ -1334,7 +1330,7 @@ function showMainMenu(chatId, messageId = null, edit = false) {
             { text: '💎 مركز الخدمات المجانية', callback_data: 'free_services_menu' }
         ],
         [
-            { text: '🛒 متجر تيربو بلس الملكي', callback_data: 'services_menu' },
+            { text: '⚡🔥 قسم تعزيز الحسابات والرشقات السريعة', callback_data: 'services_menu' },
             { text: '👥 نظام الإحالات', callback_data: 'referral_system' }
         ],
         [
@@ -1398,7 +1394,6 @@ const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
 
-// آلية الحفاظ على استيقاظ البوت 24/7 ومنع النوم أو التأخير
 setInterval(() => {
     const appUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
     axios.get(appUrl).catch(() => {});
