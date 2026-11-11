@@ -8,9 +8,7 @@ const app = express();
 app.use(bodyParser.json());
 
 const TOKEN = '9056920590:AAEEJgaQARDcJqmWX_gYlROlpxcDNAog5uo';
-const ADMIN_CHAT_ID = '8266396167'; // الأدمن الأساسي (أنت)
-const SECOND_ADMIN_CHAT_ID = '8266396168'; // معرف الأدمن الجديد 
-const SECOND_ADMIN_USERNAME = '@me11113'; // يوزر الأدمن الجديد
+const ADMIN_CHAT_ID = '8266396167'; // الأدمن الأساسي الوحيد
 
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 const BOT_USERNAME = 'abod_store_bot'; 
@@ -196,12 +194,12 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             const user = db.users[chatId];
 
-            if (user.isBanned && chatId.toString() !== ADMIN_CHAT_ID.toString() && chatId.toString() !== SECOND_ADMIN_CHAT_ID.toString()) {
+            if (user.isBanned && chatId.toString() !== ADMIN_CHAT_ID.toString()) {
                 await sendMessage(chatId, `❌ **عذراً، تم حظرك من استخدام البوت بواسطة الإدارة.**`);
                 return res.sendStatus(200);
             }
 
-            if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && user.waitingForBroadcast) {
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && user.waitingForBroadcast) {
                 user.waitingForBroadcast = false;
                 saveDatabase();
                 const allUserIds = Object.keys(db.users);
@@ -216,7 +214,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString()) && user.waitingForServiceAdd) {
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && user.waitingForServiceAdd) {
                 user.waitingForServiceAdd = false;
                 saveDatabase();
                 const parts = text.split('|');
@@ -396,11 +394,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
             }
 
             if (text && text.startsWith('/start')) {
-                if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || userUsername === SECOND_ADMIN_USERNAME) {
-                    await sendMessage(chatId, `⏳ جاري التحقق من صلاحيات المشرف...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    await sendMessage(chatId, `✨ **منور البوت يا ادمن (${SECOND_ADMIN_USERNAME})!**\nتم تحميل صلاحياتك المخصصة بنجاح.`);
-                }
                 showMainMenu(chatId);
                 return res.sendStatus(200);
             }
@@ -635,36 +628,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            if ((chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || user.username === SECOND_ADMIN_USERNAME) && data === 'second_admin_panel') {
-                const secondAdminKeyboard = {
-                    inline_keyboard: [
-                        [
-                            { text: '📢 نشر إعلانات ورسائل جماعية', callback_data: 'admin_broadcast' }
-                        ],
-                        [
-                            { text: '⚡🔥 قسم تعزيز الحسابات والرشقات السريعة', callback_data: 'services_menu' },
-                            { text: '➕ إضافة/تعديل منشور عرض', callback_data: 'admin_add_service' }
-                        ],
-                        [
-                            { text: '🎮 إدارة المسابقات والألعاب', callback_data: 'games_menu' },
-                            { text: '📊 متابعة نشاط البوت والشكاوى', callback_data: 'track_order' }
-                        ],
-                        [{ text: '⬅️ العودة للقائمة الرئيسية', callback_data: 'main_menu' }]
-                    ]
-                };
-                await editMessageText(chatId, messageId, `🛡️ **مزايا الأدمن المخصصة (${SECOND_ADMIN_USERNAME}):**\n\nصلاحياتك المفعلة فقط:\n1. نشر إعلانات ورسائل جماعية للمشتركين.\n2. إدارة المتجر وإضافة وتعديل العروض.\n3. الرد على الاستفسارات وإدارة المسابقات والألعاب.\n4. متابعة نشاط البوت والإبلاغ عن المشاكل.`, secondAdminKeyboard);
-                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
-                return res.sendStatus(200);
-            }
-
-            if ((chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || user.username === SECOND_ADMIN_USERNAME) && data === 'admin_add_service') {
-                user.waitingForServiceAdd = true;
-                saveDatabase();
-                await sendMessage(chatId, `➕ **إنشاء وتعديل منشورات العروض:**\nأرسل بالصيغة التالية:\n\`مفتاح_الخدمة | اسم العرض | السعر\`\nمثال: \`offer_1 | عرض خاص | 100\``);
-                await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, { callback_query_id: callbackQuery.id });
-                return res.sendStatus(200);
-            }
-
             if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_panel') {
                 const totalUsers = Object.keys(db.users).length;
                 const adminKeyboard = {
@@ -727,7 +690,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            if ((chatId.toString() === ADMIN_CHAT_ID.toString() || chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || user.username === SECOND_ADMIN_USERNAME) && data === 'admin_broadcast') {
+            if (chatId.toString() === ADMIN_CHAT_ID.toString() && data === 'admin_broadcast') {
                 user.waitingForBroadcast = true;
                 saveDatabase();
                 await sendMessage(chatId, `📢 **نشر إعلانات / رسائل جماعية للمشتركين:**\nأرسل الآن نص الإعلان أو الرسالة:`);
@@ -868,7 +831,6 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // مهمة تيك توك الأوتوماتيكية بضغطة زر
             if (data === 'task_tiktok_follow') {
                 const targetTiktokUrl = 'https://www.tiktok.com/@e..e233?_r=1&_t=ZS-9B4Mz6fnzAP';
                 const taskKb = {
@@ -1299,8 +1261,7 @@ app.post(`/webhook/${TOKEN}`, async (req, res) => {
 
             else if (data === 'support') {
                 const supportText = `🛠️ **الدعم الفني وخدمة العملاء:**\n\n` +
-                    `🔹 الدعم الفني الاصلي: @abod097644\n` +
-                    `🔹 الأدمن المساعد: ${SECOND_ADMIN_USERNAME}\n\n` +
+                    `🔹 الدعم الفني: @abod097644\n\n` +
                     `💡 **أي أحد عنده فكرة تنضاف للبوت يتواصل مع الدعم الفني مباشرة!**`;
                 
                 await editMessageText(chatId, messageId, supportText, {
@@ -1353,10 +1314,6 @@ function showMainMenu(chatId, messageId = null, edit = false) {
 
     if (chatId.toString() === ADMIN_CHAT_ID.toString()) {
         keyboardRows.push([{ text: '📊 لوحة تحكم الأدمن الرئيسي', callback_data: 'admin_panel' }]);
-    }
-
-    if (chatId.toString() === SECOND_ADMIN_CHAT_ID.toString() || user.username === SECOND_ADMIN_USERNAME) {
-        keyboardRows.push([{ text: '🛡️ مزايا الادمن (@me11113)', callback_data: 'second_admin_panel' }]);
     }
 
     const menuKeyboard = { inline_keyboard: keyboardRows };
